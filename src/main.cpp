@@ -50,21 +50,6 @@ struct PointLight {
     float linear;
     float quadratic;
 };
-struct Lampa {
-    glm::vec3 position;
-    glm::vec3 direction;
-    float cutOff;
-    float outerCutOff;
-
-    glm::vec3 ambient;
-    glm::vec3 diffuse;
-    glm::vec3 specular;
-
-    float constant;
-    float linear;
-    float quadratic;
-};
-
 struct ProgramState {
     glm::vec3 clearColor = glm::vec3(0);
     bool ImGuiEnabled = false;
@@ -73,7 +58,6 @@ struct ProgramState {
     glm::vec3 backpackPosition = glm::vec3(0.0f);
     float backpackScale = 1.0f;
     PointLight pointLight;
-    Lampa lampa;
     ProgramState()
             : camera(glm::vec3(0.0f, 0.0f, 3.0f)) {}
 
