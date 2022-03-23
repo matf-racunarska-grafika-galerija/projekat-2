@@ -50,6 +50,20 @@ struct PointLight {
     float linear;
     float quadratic;
 };
+struct Lampa {
+    glm::vec3 position;
+    glm::vec3 direction;
+    float cutOff;
+    float outerCutOff;
+
+    glm::vec3 ambient;
+    glm::vec3 diffuse;
+    glm::vec3 specular;
+
+    float constant;
+    float linear;
+    float quadratic;
+};
 
 struct ProgramState {
     glm::vec3 clearColor = glm::vec3(0);
@@ -59,6 +73,7 @@ struct ProgramState {
     glm::vec3 backpackPosition = glm::vec3(0.0f);
     float backpackScale = 1.0f;
     PointLight pointLight;
+    Lampa lampa;
     ProgramState()
             : camera(glm::vec3(0.0f, 0.0f, 3.0f)) {}
 
@@ -168,18 +183,6 @@ int main() {
     Model ourModel("resources/objects/backpack/backpack.obj");
     ourModel.SetShaderTextureNamePrefix("material.");
 
-    PointLight& pointLight = programState->pointLight;
-    pointLight.position = glm::vec3(4.0f, 4.0, 0.0);
-    pointLight.ambient = glm::vec3(0.1, 0.1, 0.1);
-    pointLight.diffuse = glm::vec3(0.6, 0.6, 0.6);
-    pointLight.specular = glm::vec3(1.0, 1.0, 1.0);
-
-    pointLight.constant = 1.0f;
-    pointLight.linear = 0.09f;
-    pointLight.quadratic = 0.032f;
-
-
-
     // draw in wireframe
     //glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
 
@@ -204,15 +207,21 @@ int main() {
 
         // don't forget to enable shader before setting uniforms
         ourShader.use();
-        pointLight.position = glm::vec3(4.0 * cos(currentFrame), 4.0f, 4.0 * sin(currentFrame));
-        ourShader.setVec3("pointLight.position", pointLight.position);
-        ourShader.setVec3("pointLight.ambient", pointLight.ambient);
-        ourShader.setVec3("pointLight.diffuse", pointLight.diffuse);
-        ourShader.setVec3("pointLight.specular", pointLight.specular);
-        ourShader.setFloat("pointLight.constant", pointLight.constant);
-        ourShader.setFloat("pointLight.linear", pointLight.linear);
-        ourShader.setFloat("pointLight.quadratic", pointLight.quadratic);
+        ourShader.setVec3("lampa.position", programState->camera.Position);
+        ourShader.setVec3("lampa.direction", programState->camera.Front);
+        ourShader.setFloat("lampa.cutOff", glm::cos(glm::radians(12.5f)));
+        ourShader.setFloat("lampa.outerCutOff", glm::cos(glm::radians(17.5f)));
         ourShader.setVec3("viewPosition", programState->camera.Position);
+
+        ourShader.setVec3("lampa.ambient", 0.1f, 0.1f, 0.1f);
+        ourShader.setVec3("lampa.diffuse", 0.8f, 0.8f, 0.8f);
+        ourShader.setVec3("lampa.specular", 1.0f, 1.0f, 1.0f);
+
+        ourShader.setFloat("lampa.constant", 1.0f);
+        ourShader.setFloat("lampa.linear", 0.09f);
+        ourShader.setFloat("lampa.quadratic", 0.032f);
+
+
         ourShader.setFloat("material.shininess", 32.0f);
         // view/projection transformations
         glm::mat4 projection = glm::perspective(glm::radians(programState->camera.Zoom),
