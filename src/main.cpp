@@ -23,8 +23,8 @@ void key_callback(GLFWwindow *window, int key, int scancode, int action, int mod
 void processInput(GLFWwindow *window);
 
 // settings
-const unsigned int SCR_WIDTH = 800;
-const unsigned int SCR_HEIGHT = 600;
+const unsigned int SCR_WIDTH = 1200;
+const unsigned int SCR_HEIGHT = 900;
 
 // camera
 float lastX = SCR_WIDTH / 2.0f;
@@ -69,6 +69,7 @@ struct ProgramState {
     float backpackScale = 1.0f;
     PointLight pointLight;
     bool grayscaleEnabled = false;
+    bool AAEnabled = true;
     Lampa lampa;
     ProgramState()
             : camera(glm::vec3(0.0f, 0.0f, 3.0f)) {}
@@ -82,7 +83,6 @@ void ProgramState::SaveToFile(std::string filename) {
     out << clearColor.r << '\n'
         << clearColor.g << '\n'
         << clearColor.b << '\n'
-        << ImGuiEnabled << '\n'
         << camera.Position.x << '\n'
         << camera.Position.y << '\n'
         << camera.Position.z << '\n'
@@ -96,7 +96,6 @@ void ProgramState::LoadFromFile(std::string filename) {
         in >> clearColor.r
            >> clearColor.g
            >> clearColor.b
-           >> ImGuiEnabled
            >> camera.Position.x
            >> camera.Position.y
            >> camera.Position.z
@@ -131,6 +130,9 @@ int main() {
         return -1;
     }
     glfwMakeContextCurrent(window);
+
+    // dozvoljava da prozor menja velicinu, ali cuva 4:3 odnos
+    glfwSetWindowAspectRatio(window, 4, 3);
 
     glfwSetFramebufferSizeCallback(window, framebuffer_size_callback);
     glfwSetCursorPosCallback(window, mouse_callback);
@@ -292,6 +294,7 @@ int main() {
         ourShader.setMat4("model", model);
         ourModel.Draw(ourShader);
 
+
         // ANTI-ALIASING: ukljucivanje
         // *************************************************************************************************************
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
@@ -386,33 +389,44 @@ void DrawImGui(ProgramState *programState) {
     ImGui::NewFrame();
 
     {
-        static float f = 0.0f;
-        ImGui::Begin("Hello window");
-        ImGui::Text("Hello text");
-        ImGui::SliderFloat("Float slider", &f, 0.0, 1.0);
+        ImGui::SetNextWindowPos(ImVec2(0,0));
+        ImGui::SetNextWindowSize(ImVec2(500, 150));
+        ImGui::Begin("Settings:");
         ImGui::ColorEdit3("Background color", (float *) &programState->clearColor);
         ImGui::DragFloat3("Backpack position", (float*)&programState->backpackPosition);
         ImGui::DragFloat("Backpack scale", &programState->backpackScale, 0.05, 0.1, 4.0);
-
-        ImGui::DragFloat("pointLight.constant", &programState->pointLight.constant, 0.05, 0.0, 1.0);
-        ImGui::DragFloat("pointLight.linear", &programState->pointLight.linear, 0.05, 0.0, 1.0);
-        ImGui::DragFloat("pointLight.quadratic", &programState->pointLight.quadratic, 0.05, 0.0, 1.0);
         ImGui::End();
     }
 
     {
+        ImGui::SetNextWindowPos(ImVec2(0,200));
+        ImGui::SetNextWindowSize(ImVec2(500, 150), ImGuiCond_Once);
         ImGui::Begin("Camera info");
         const Camera& c = programState->camera;
         ImGui::Text("Camera position: (%f, %f, %f)", c.Position.x, c.Position.y, c.Position.z);
         ImGui::Text("(Yaw, Pitch): (%f, %f)", c.Yaw, c.Pitch);
         ImGui::Text("Camera front: (%f, %f, %f)", c.Front.x, c.Front.y, c.Front.z);
-        ImGui::Checkbox("Camera mouse update", &programState->CameraMouseMovementUpdateEnabled);
+        ImGui::Spacing();
+        ImGui::Bullet();
+        ImGui::Text("Toggle camera movement on/off: C");
         ImGui::End();
     }
 
     {
+        ImGui::SetNextWindowPos(ImVec2(0,400));
+        ImGui::SetNextWindowSize(ImVec2(500, 150), ImGuiCond_Once);
         ImGui::Begin("Anti-aliasing settings");
-        ImGui::Checkbox("Grayscale", &programState->grayscaleEnabled);
+        ImGui::Checkbox("Anti-Aliasing (shortcut: F2)", &programState->AAEnabled);
+        ImGui::Checkbox("Grayscale (shortcut: F3)", &programState->grayscaleEnabled);
+        ImGui::End();
+    }
+
+    {
+        ImGui::SetNextWindowBgAlpha(0.35f);
+        ImGui::SetNextWindowPos(ImVec2(SCR_WIDTH - 60,0), ImGuiCond_Once);
+        ImGui::SetNextWindowSize(ImVec2(60, 50));
+        ImGui::Begin("FPS:");
+        ImGui::Text(("%.2f"), floor(1/deltaTime));
         ImGui::End();
     }
 
@@ -424,11 +438,34 @@ void key_callback(GLFWwindow *window, int key, int scancode, int action, int mod
     if (key == GLFW_KEY_F1 && action == GLFW_PRESS) {
         programState->ImGuiEnabled = !programState->ImGuiEnabled;
         if (programState->ImGuiEnabled) {
-            programState->CameraMouseMovementUpdateEnabled = false;
             glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+            programState->CameraMouseMovementUpdateEnabled = false;
         } else {
-            programState->CameraMouseMovementUpdateEnabled = true;
             glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+            programState->CameraMouseMovementUpdateEnabled = true;
         }
+
     }
+
+    if (key == GLFW_KEY_C && action == GLFW_PRESS && programState->ImGuiEnabled) {
+        programState->CameraMouseMovementUpdateEnabled = !programState->CameraMouseMovementUpdateEnabled;
+        if(programState->CameraMouseMovementUpdateEnabled == true)
+            glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+        else
+            glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+    }
+
+    // ANTI-ALIASING key callbacks:
+    if (key == GLFW_KEY_F2 && action == GLFW_PRESS) {
+        programState->AAEnabled = !programState->AAEnabled;
+        if(programState->AAEnabled)
+            glEnable(GL_MULTISAMPLE);
+        if(!programState->AAEnabled)
+            glDisable(GL_MULTISAMPLE);
+    }
+    if (key == GLFW_KEY_F3 && action == GLFW_PRESS)
+        programState->grayscaleEnabled = !programState->grayscaleEnabled;
+
+
+
 }
