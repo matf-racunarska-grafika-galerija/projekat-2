@@ -245,14 +245,20 @@ int main() {
 
         // don't forget to enable shader before setting uniforms
         ourShader.use();
+
+        glUniform3f(glGetUniformLocation(ourShader.ID, "dirLight.direction"), -0.2f, -1.0f, -0.3f);
+        glUniform3f(glGetUniformLocation(ourShader.ID, "dirLight.ambient"), 1.0f, 1.0f, 1.0f);
+        glUniform3f(glGetUniformLocation(ourShader.ID, "dirLight.diffuse"), 0.05f, 0.05f, 0.05);
+        glUniform3f(glGetUniformLocation(ourShader.ID, "dirLight.specular"), 0.2f, 0.2f, 0.2f);
+
         ourShader.setVec3("lampa.position", programState->camera.Position);
         ourShader.setVec3("lampa.direction", programState->camera.Front);
-        ourShader.setFloat("lampa.cutOff", glm::cos(glm::radians(12.5f)));
-        ourShader.setFloat("lampa.outerCutOff", glm::cos(glm::radians(17.5f)));
+        ourShader.setFloat("lampa.cutOff", glm::cos(glm::radians(10.0f)));
+        ourShader.setFloat("lampa.outerCutOff", glm::cos(glm::radians(15.0f)));
         ourShader.setVec3("viewPosition", programState->camera.Position);
 
-        ourShader.setVec3("lampa.ambient", 0.1f, 0.1f, 0.1f);
-        ourShader.setVec3("lampa.diffuse", 0.8f, 0.8f, 0.8f);
+        ourShader.setVec3("lampa.ambient", 0.0f, 0.0f, 0.0f);
+        ourShader.setVec3("lampa.diffuse", 1.0f, 1.0f, 1.0f);
         ourShader.setVec3("lampa.specular", 1.0f, 1.0f, 1.0f);
 
         ourShader.setFloat("lampa.constant", 1.0f);
