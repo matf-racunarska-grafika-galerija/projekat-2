@@ -100,8 +100,6 @@ int main() {
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 
-    // built in MSAA: sa koliko tacaka zelimo da sample-ujemo svaki fragment
-    //glfwWindowHint(GLFW_SAMPLES, 4);
 
 #ifdef __APPLE__
     glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
@@ -150,9 +148,6 @@ int main() {
     // configure global opengl state
     glEnable(GL_DEPTH_TEST);
 
-    // built in MSAA: aktiviramo multisampling
-    //glEnable(GL_MULTISAMPLE);
-
     // build and compile shaders
     Shader ourShader("resources/shaders/2.model_lighting.vs", "resources/shaders/2.model_lighting.fs");
     Shader screenShader("resources/shaders/anti-aliasing.vs", "resources/shaders/anti-aliasing.fs");
@@ -160,7 +155,14 @@ int main() {
 
     // load models
     Model ourModel("resources/objects/backpack/backpack.obj");
+
+    // iz nekog razloga mora da se obrne tekstura
+    stbi_set_flip_vertically_on_load(false);
+    Model flashlightModel("resources/objects/flashlight/flashlight.obj");
+    stbi_set_flip_vertically_on_load(true);
+
     ourModel.SetShaderTextureNamePrefix("material.");
+    flashlightModel.SetShaderTextureNamePrefix("material.");
 
     PointLight& pointLight = programState->pointLight;
     pointLight.position = glm::vec3(4.0f, 4.0, 0.0);
@@ -278,6 +280,13 @@ int main() {
         model = glm::scale(model, glm::vec3(programState->backpackScale));    // it's a bit too big for our scene, so scale it down
         ourShader.setMat4("model", model);
         ourModel.Draw(ourShader);
+
+        model = glm::mat4(1.0f);
+        model = glm::translate(model,
+                               glm::vec3(5.0f, 0.0f, 5.0f)); // translate it down so it's at the center of the scene
+        model = glm::scale(model, glm::vec3(programState->backpackScale));    // it's a bit too big for our scene, so scale it down
+        ourShader.setMat4("model", model);
+        flashlightModel.Draw(ourShader);
 
 
         // ANTI-ALIASING: ukljucivanje
