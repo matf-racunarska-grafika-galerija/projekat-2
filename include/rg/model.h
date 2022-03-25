@@ -7,6 +7,7 @@
 #include <stb_image.h>
 #include <vector>
 #include <string>
+#include <iostream>
 #include <learnopengl/shader.h>
 #include <rg/mesh.h>
 
@@ -39,7 +40,6 @@ private:
 
         if (!scene || scene->mFlags & AI_SCENE_FLAGS_INCOMPLETE || !scene->mRootNode) {
             ASSERT(false, "Failed to load a model!");
-            return;
         }
         this->directory = path.substr(0, path.find_last_of('/'));
         processNode(scene->mRootNode, scene);
@@ -91,7 +91,7 @@ private:
             vertices.push_back(vertex);
         }
 
-        for (unsigned int i = 0; i < mesh->mFaces; ++i) {
+        for (unsigned int i = 0; i < mesh->mFaces->mNumIndices; ++i) {
             aiFace face = mesh->mFaces[i];
 
             for (unsigned int j = 0; j < face.mNumIndices; ++j) {
@@ -144,39 +144,39 @@ private:
         }
 
     }
-};
 
-unsigned int TextureFromFile(const char* filename, std::string directory) {
-    std::string fullPath(directory + "/" + filename);
+    unsigned int TextureFromFile(const char* filename, std::string directory) {
+        std::string fullPath(directory + "/" + filename);
 
-    unsigned int textureID;
-    glGenTextures(1, &textureID);
+        unsigned int textureID;
+        glGenTextures(1, &textureID);
 
-    int width, height, nrComponents;
-    unsigned char* data = stbi_load(fullPath.c_str(), &width, &height, &nrComponents, 0);
-    if (data) {
-        GLenum format;
-        if (nrComponents == 1) {
-            format = GL_RED;
-        } else if (nrComponents == 3) {
-            format = GL_RGB;
-        } else if (nrComponents == 4) {
-            format = GL_RGBA;
+        int width, height, nrComponents;
+        unsigned char* data = stbi_load(fullPath.c_str(), &width, &height, &nrComponents, 0);
+        if (data) {
+            GLenum format;
+            if (nrComponents == 1) {
+                format = GL_RED;
+            } else if (nrComponents == 3) {
+                format = GL_RGB;
+            } else if (nrComponents == 4) {
+                format = GL_RGBA;
+            }
+            glBindTexture(GL_TEXTURE_2D, textureID);
+            glTexImage2D(GL_TEXTURE_2D, 0, format, width, height, 0, format, GL_UNSIGNED_BYTE, data);
+            glGenerateMipmap(GL_TEXTURE_2D);
+
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+
+        } else {
+            ASSERT(false, "Failed to load texture image");
         }
-        glBindTexture(GL_TEXTURE_2D, textureID);
-        glTexImage2D(GL_TEXTURE_2D, 0, format, width, height, 0, format, GL_UNSIGNED_BYTE, data);
-        glGenerateMipmap(GL_TEXTURE_2D);
-
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_FILTER, GL_LINEAR);
-
-    } else {
-        ASSERT(false, "Failed to load texture image");
+        stbi_image_free(data);
+        return textureID;
     }
-    stbi_image_free(data);
-    return textureID;
-}
 
+};
 #endif //PROJECT_BASE_MODEL_H
