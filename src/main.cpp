@@ -93,6 +93,8 @@ ProgramState *programState;
 
 void DrawImGui(ProgramState *programState);
 
+glm::mat4 CalcFlashlightPosition();
+
 int main() {
     // glfw: initialize and configure
     glfwInit();
@@ -273,7 +275,7 @@ int main() {
         ourShader.setMat4("projection", projection);
         ourShader.setMat4("view", view);
 
-        // render the loaded model
+        // renderovanje ranca:
         glm::mat4 model = glm::mat4(1.0f);
         model = glm::translate(model,
                                programState->backpackPosition); // translate it down so it's at the center of the scene
@@ -281,10 +283,11 @@ int main() {
         ourShader.setMat4("model", model);
         ourModel.Draw(ourShader);
 
-        model = glm::mat4(1.0f);
-        model = glm::translate(model,
-                               glm::vec3(5.0f, 0.0f, 5.0f)); // translate it down so it's at the center of the scene
-        model = glm::scale(model, glm::vec3(programState->backpackScale));    // it's a bit too big for our scene, so scale it down
+        // renderovanje baterijske lampe:
+        model = CalcFlashlightPosition();
+
+        // model = glm::rotate(model, programState->camera.Yaw, programState->camera.Up);
+        model = glm::scale(model, glm::vec3(0.1));    // it's a bit too big for our scene, so scale it down
         ourShader.setMat4("model", model);
         flashlightModel.Draw(ourShader);
 
@@ -377,57 +380,6 @@ void scroll_callback(GLFWwindow *window, double xoffset, double yoffset) {
     programState->camera.ProcessMouseScroll(yoffset);
 }
 
-void DrawImGui(ProgramState *programState) {
-    ImGui_ImplOpenGL3_NewFrame();
-    ImGui_ImplGlfw_NewFrame();
-    ImGui::NewFrame();
-
-    {
-        ImGui::SetNextWindowPos(ImVec2(0,0));
-        ImGui::SetNextWindowSize(ImVec2(500, 150));
-        ImGui::Begin("Settings:");
-        ImGui::ColorEdit3("Background color", (float *) &programState->clearColor);
-        ImGui::DragFloat3("Backpack position", (float*)&programState->backpackPosition);
-        ImGui::DragFloat("Backpack scale", &programState->backpackScale, 0.05, 0.1, 4.0);
-        ImGui::End();
-    }
-
-    {
-        ImGui::SetNextWindowPos(ImVec2(0,200));
-        ImGui::SetNextWindowSize(ImVec2(500, 150), ImGuiCond_Once);
-        ImGui::Begin("Camera info");
-        const Camera& c = programState->camera;
-        ImGui::Text("Camera position: (%f, %f, %f)", c.Position.x, c.Position.y, c.Position.z);
-        ImGui::Text("(Yaw, Pitch): (%f, %f)", c.Yaw, c.Pitch);
-        ImGui::Text("Camera front: (%f, %f, %f)", c.Front.x, c.Front.y, c.Front.z);
-        ImGui::Spacing();
-        ImGui::Bullet();
-        ImGui::Text("Toggle camera movement on/off: C");
-        ImGui::End();
-    }
-
-    {
-        ImGui::SetNextWindowPos(ImVec2(0,400));
-        ImGui::SetNextWindowSize(ImVec2(500, 150), ImGuiCond_Once);
-        ImGui::Begin("Anti-aliasing settings");
-        ImGui::Checkbox("Anti-Aliasing (shortcut: F2)", &programState->AAEnabled);
-        ImGui::Checkbox("Grayscale (shortcut: F3)", &programState->grayscaleEnabled);
-        ImGui::End();
-    }
-
-    {
-        ImGui::SetNextWindowBgAlpha(0.35f);
-        ImGui::SetNextWindowPos(ImVec2(SCR_WIDTH - 60,0), ImGuiCond_Once);
-        ImGui::SetNextWindowSize(ImVec2(60, 50));
-        ImGui::Begin("FPS:");
-        ImGui::Text(("%.2f"), floor(1/deltaTime));
-        ImGui::End();
-    }
-
-    ImGui::Render();
-    ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
-}
-
 void key_callback(GLFWwindow *window, int key, int scancode, int action, int mods) {
     if (key == GLFW_KEY_F1 && action == GLFW_PRESS) {
         programState->ImGuiEnabled = !programState->ImGuiEnabled;
@@ -461,5 +413,79 @@ void key_callback(GLFWwindow *window, int key, int scancode, int action, int mod
         programState->grayscaleEnabled = !programState->grayscaleEnabled;
 
 
+    // reset the camera to default position
+    if (key == GLFW_KEY_P && action == GLFW_PRESS) {
+        programState->camera.Position = glm::vec3(0.0f, 0.0f, 3.0f);
+        programState->camera.Yaw = -90.0f;
+        programState->camera.Pitch = 0.0f;
+        programState->camera.Front = glm::vec3(0.0f, 0.0f, -1.0f);
+    }
 
+}
+
+void DrawImGui(ProgramState *programState) {
+    ImGui_ImplOpenGL3_NewFrame();
+    ImGui_ImplGlfw_NewFrame();
+    ImGui::NewFrame();
+
+    {
+        ImGui::SetNextWindowPos(ImVec2(0,0));
+        ImGui::SetNextWindowSize(ImVec2(500, 150));
+        ImGui::Begin("Settings:");
+        ImGui::ColorEdit3("Background color", (float *) &programState->clearColor);
+        ImGui::DragFloat3("Backpack position", (float*)&programState->backpackPosition);
+        ImGui::DragFloat("Backpack scale", &programState->backpackScale, 0.05, 0.1, 4.0);
+        ImGui::End();
+    }
+
+    {
+        ImGui::SetNextWindowPos(ImVec2(0,200));
+        ImGui::SetNextWindowSize(ImVec2(500, 150), ImGuiCond_Once);
+        ImGui::Begin("Camera info");
+        const Camera& c = programState->camera;
+        ImGui::Text("Camera position: (%f, %f, %f)", c.Position.x, c.Position.y, c.Position.z);
+        ImGui::Text("(Yaw, Pitch): (%f, %f)", c.Yaw, c.Pitch);
+        ImGui::Text("Camera front: (%f, %f, %f)", c.Front.x, c.Front.y, c.Front.z);
+        ImGui::Spacing();
+        ImGui::Bullet();
+        ImGui::Text("Toggle camera movement on/off: C");
+        ImGui::Bullet();
+        ImGui::Text("Reset camera position: P");
+        ImGui::End();
+    }
+
+    {
+        ImGui::SetNextWindowPos(ImVec2(0,400));
+        ImGui::SetNextWindowSize(ImVec2(500, 150), ImGuiCond_Once);
+        ImGui::Begin("Anti-aliasing settings");
+        ImGui::Checkbox("Anti-Aliasing (shortcut: F2)", &programState->AAEnabled);
+        ImGui::Checkbox("Grayscale (shortcut: F3)", &programState->grayscaleEnabled);
+        ImGui::End();
+    }
+
+    {
+        ImGui::SetNextWindowBgAlpha(0.35f);
+        ImGui::SetNextWindowPos(ImVec2(SCR_WIDTH - 60,0), ImGuiCond_Once);
+        ImGui::SetNextWindowSize(ImVec2(60, 50));
+        ImGui::Begin("FPS:");
+        ImGui::Text(("%.2f"), floor(1/deltaTime));
+        ImGui::End();
+    }
+
+    ImGui::Render();
+    ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+}
+
+glm::mat4 CalcFlashlightPosition() {
+    Camera c = programState->camera;
+
+    glm::mat4 model = glm::mat4(1.0f);
+    model = glm::translate(model, c.Position + 0.35f * c.Front + 0.07f * c.Right - 0.08f * c.Up);
+
+    model = glm::rotate(model, -glm::radians(c.Yaw + 180), c.Up);
+    model = glm::rotate(model, glm::radians(c.Pitch), c.Right);
+
+    model = glm::scale(model, glm::vec3(0.25f));
+
+    return model;
 }
