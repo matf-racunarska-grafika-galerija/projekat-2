@@ -23,8 +23,6 @@ using namespace std;
 
 unsigned int TextureFromFile(const char *path, const string &directory, bool gamma = false);
 
-
-
 class Model
 {
 public:
@@ -212,6 +210,7 @@ private:
                 textures_loaded.push_back(texture);  // store it as texture loaded for entire model, to ensure we won't unnecesery load duplicate textures.
             }
         }
+
         return textures;
     }
 };

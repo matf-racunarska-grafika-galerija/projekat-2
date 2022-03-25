@@ -100,6 +100,8 @@ ProgramState *programState;
 
 void DrawImGui(ProgramState *programState);
 
+glm::mat4 CalcFlashlightPosition();
+
 int main() {
     // glfw: initialize and configure
     glfwInit();
@@ -107,8 +109,6 @@ int main() {
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 
-    // built in MSAA: sa koliko tacaka zelimo da sample-ujemo svaki fragment
-    //glfwWindowHint(GLFW_SAMPLES, 4);
 
 #ifdef __APPLE__
     glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
@@ -159,9 +159,6 @@ int main() {
     ImGui_ImplGlfw_InitForOpenGL(window, true);
     ImGui_ImplOpenGL3_Init("#version 330 core");
 
-
-    // built in MSAA: aktiviramo multisampling
-    //glEnable(GL_MULTISAMPLE);
     glEnable(GL_DEPTH_TEST);
 
     // build and compile shaders
@@ -172,7 +169,14 @@ int main() {
 
     // load models
     Model ourModel("resources/objects/backpack/backpack.obj");
+
+    // iz nekog razloga mora da se obrne tekstura
+    stbi_set_flip_vertically_on_load(false);
+    Model flashlightModel("resources/objects/flashlight/flashlight.obj");
+    stbi_set_flip_vertically_on_load(true);
+
     ourModel.SetShaderTextureNamePrefix("material.");
+    flashlightModel.SetShaderTextureNamePrefix("material.");
 
     PointLight& pointLight = programState->pointLight;
     pointLight.position = glm::vec3(4.0f, 4.0, 0.0);
@@ -301,9 +305,6 @@ int main() {
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
     // ------------------------------------------------------------------------------------------------------------------------
 
-    //mozda nam ne treba ovde
-    //ourShader.use();
-
     // render loop
     while (!glfwWindowShouldClose(window)) {
         // per-frame time logic
@@ -339,6 +340,7 @@ int main() {
         ourShader.setMat4("projection", projection);
         ourShader.setMat4("view", view);
 
+
         // directional light
         ourShader.setVec3("dirLight.direction", -0.2f, -1.0f, -0.3f);
         ourShader.setVec3("dirLight.ambient", 0.0f, 0.0f, 0.0f);
@@ -369,15 +371,18 @@ int main() {
         ourShader.setFloat("lampa.cutOff", glm::cos(glm::radians(10.0f)));
         ourShader.setFloat("lampa.outerCutOff", glm::cos(glm::radians(15.0f)));
 
-
-        // render the loaded model
-        //backpack
+        // renderovanje ranca:
         glm::mat4 model = glm::mat4(1.0f);
-        model = glm::translate(model,
-                               programState->tempPosition);
+        model = glm::translate(model,programState->tempPosition);
         model = glm::scale(model, glm::vec3(programState->tempScale));
         ourShader.setMat4("model", model);
         ourModel.Draw(ourShader);
+
+        // renderovanje baterijske lampe:
+        model = CalcFlashlightPosition();
+        ourShader.setMat4("model", model);
+        flashlightModel.Draw(ourShader);
+
 
         /* kada ucitavas novi model koristis ovaj templejt
         model = glm::mat4(1.0f);
@@ -406,6 +411,7 @@ int main() {
         glBindVertexArray(0);
         glDepthMask(GL_TRUE);
         glDepthFunc(GL_LESS); // set depth function back to default
+
 
         // ANTI-ALIASING: ukljucivanje
         // *************************************************************************************************************
@@ -494,6 +500,53 @@ void scroll_callback(GLFWwindow *window, double xoffset, double yoffset) {
     programState->camera.ProcessMouseScroll(yoffset);
 }
 
+void key_callback(GLFWwindow *window, int key, int scancode, int action, int mods) {
+    if (key == GLFW_KEY_F1 && action == GLFW_PRESS) {
+        programState->ImGuiEnabled = !programState->ImGuiEnabled;
+        if (programState->ImGuiEnabled) {
+            glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+            programState->CameraMouseMovementUpdateEnabled = false;
+        } else {
+            glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+            programState->CameraMouseMovementUpdateEnabled = true;
+        }
+
+    }
+
+    if (key == GLFW_KEY_C && action == GLFW_PRESS && programState->ImGuiEnabled) {
+        programState->CameraMouseMovementUpdateEnabled = !programState->CameraMouseMovementUpdateEnabled;
+        if(programState->CameraMouseMovementUpdateEnabled == true)
+            glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+        else
+            glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+    }
+
+    // ANTI-ALIASING key callbacks:
+    if (key == GLFW_KEY_F2 && action == GLFW_PRESS) {
+        programState->AAEnabled = !programState->AAEnabled;
+        if(programState->AAEnabled)
+            glEnable(GL_MULTISAMPLE);
+        if(!programState->AAEnabled)
+            glDisable(GL_MULTISAMPLE);
+    }
+    if (key == GLFW_KEY_F3 && action == GLFW_PRESS)
+        programState->grayscaleEnabled = !programState->grayscaleEnabled;
+
+
+    // reset the camera to default position
+    if (key == GLFW_KEY_P && action == GLFW_PRESS) {
+        programState->camera.Position = glm::vec3(0.0f, 0.0f, 3.0f);
+        programState->camera.Yaw = -90.0f;
+        programState->camera.Pitch = 0.0f;
+        programState->camera.Front = glm::vec3(0.0f, 0.0f, -1.0f);
+    }
+
+    if (key == GLFW_KEY_K && action == GLFW_PRESS) {
+        programState->spotlight = !programState->spotlight;
+    }
+
+}
+
 void DrawImGui(ProgramState *programState) {
     ImGui_ImplOpenGL3_NewFrame();
     ImGui_ImplGlfw_NewFrame();
@@ -520,6 +573,10 @@ void DrawImGui(ProgramState *programState) {
         ImGui::Spacing();
         ImGui::Bullet();
         ImGui::Text("Toggle camera movement on/off: C");
+        ImGui::Bullet();
+        ImGui::Text("Reset camera position: P");
+        ImGui::Bullet();
+        ImGui::Text("Toggle camera spotlight on/off: K");
         ImGui::End();
     }
 
@@ -545,43 +602,19 @@ void DrawImGui(ProgramState *programState) {
     ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 }
 
-void key_callback(GLFWwindow *window, int key, int scancode, int action, int mods) {
-    if (key == GLFW_KEY_F1 && action == GLFW_PRESS) {
-        programState->ImGuiEnabled = !programState->ImGuiEnabled;
-        if (programState->ImGuiEnabled) {
-            glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
-            programState->CameraMouseMovementUpdateEnabled = false;
-        } else {
-            glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
-            programState->CameraMouseMovementUpdateEnabled = true;
-        }
+glm::mat4 CalcFlashlightPosition() {
+    Camera c = programState->camera;
 
-    }
-    //mozes da iskljucis lampu ako si pravi gejmer
-    if (key == GLFW_KEY_K && action == GLFW_PRESS) {
-        programState->spotlight = !programState->spotlight;
-    }
+    glm::mat4 model = glm::mat4(1.0f);
+    model = glm::translate(model, c.Position + 0.35f * c.Front + 0.07f * c.Right - 0.08f * c.Up);
 
-    if (key == GLFW_KEY_C && action == GLFW_PRESS && programState->ImGuiEnabled) {
-        programState->CameraMouseMovementUpdateEnabled = !programState->CameraMouseMovementUpdateEnabled;
-        if(programState->CameraMouseMovementUpdateEnabled == true)
-            glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
-        else
-            glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
-    }
+    model = glm::rotate(model, -glm::radians(c.Yaw + 180), c.Up);
+    model = glm::rotate(model, glm::radians(c.Pitch), c.Right);
 
-    // ANTI-ALIASING key callbacks:
-    if (key == GLFW_KEY_F2 && action == GLFW_PRESS) {
-        programState->AAEnabled = !programState->AAEnabled;
-        if(programState->AAEnabled)
-            glEnable(GL_MULTISAMPLE);
-        if(!programState->AAEnabled)
-            glDisable(GL_MULTISAMPLE);
-    }
-    if (key == GLFW_KEY_F3 && action == GLFW_PRESS)
-        programState->grayscaleEnabled = !programState->grayscaleEnabled;
+    model = glm::scale(model, glm::vec3(0.025f));
 
-}
+    return model;
+    }
 
 unsigned int loadTexture(char const * path)
 {
