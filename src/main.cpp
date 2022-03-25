@@ -21,6 +21,8 @@ void mouse_callback(GLFWwindow *window, double xpos, double ypos);
 void scroll_callback(GLFWwindow *window, double xoffset, double yoffset);
 void key_callback(GLFWwindow *window, int key, int scancode, int action, int mods);
 void processInput(GLFWwindow *window);
+unsigned int loadTexture(const char *path);
+unsigned int loadCubeMap(vector<std::string> faces);
 
 // settings
 const unsigned int SCR_WIDTH = 1200;
@@ -50,8 +52,7 @@ struct ProgramState {
     bool ImGuiEnabled = false;
     Camera camera;
     bool CameraMouseMovementUpdateEnabled = true;
-    glm::vec3 backpackPosition = glm::vec3(0.0f);
-    float backpackScale = 1.0f;
+    bool spotlight = true;
     PointLight pointLight;
     bool grayscaleEnabled = false;
     bool AAEnabled = true;
@@ -62,6 +63,9 @@ struct ProgramState {
     void SaveToFile(std::string filename);
 
     void LoadFromFile(std::string filename);
+    glm::vec3 tempPosition=glm::vec3(0.0f, 2.0f, 0.0f);
+    float tempScale=1.0f;
+    float tempRotation=0.0f;
 };
 void ProgramState::SaveToFile(std::string filename) {
     std::ofstream out(filename);
@@ -73,7 +77,8 @@ void ProgramState::SaveToFile(std::string filename) {
         << camera.Position.z << '\n'
         << camera.Front.x << '\n'
         << camera.Front.y << '\n'
-        << camera.Front.z << '\n';
+        << camera.Front.z << '\n'
+        << spotlight << '\n';
 }
 void ProgramState::LoadFromFile(std::string filename) {
     std::ifstream in(filename);
@@ -86,10 +91,12 @@ void ProgramState::LoadFromFile(std::string filename) {
            >> camera.Position.z
            >> camera.Front.x
            >> camera.Front.y
-           >> camera.Front.z;
+           >> camera.Front.z
+           >> spotlight;
     }
 }
 ProgramState *programState;
+
 
 void DrawImGui(ProgramState *programState);
 
@@ -132,11 +139,16 @@ int main() {
         return -1;
     }
 
+    glEnable(GL_DEPTH_TEST);
+
     // tell stb_image.h to flip loaded textures on the y-axis (before loading model).
     stbi_set_flip_vertically_on_load(true);
 
     programState = new ProgramState;
     programState->LoadFromFile("resources/program_state.txt");
+    if (programState->ImGuiEnabled) {
+        glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+    }
 
     // Init Imgui
     IMGUI_CHECKVERSION();
@@ -147,15 +159,15 @@ int main() {
     ImGui_ImplGlfw_InitForOpenGL(window, true);
     ImGui_ImplOpenGL3_Init("#version 330 core");
 
-    // configure global opengl state
-    glEnable(GL_DEPTH_TEST);
 
     // built in MSAA: aktiviramo multisampling
     //glEnable(GL_MULTISAMPLE);
+    glEnable(GL_DEPTH_TEST);
 
     // build and compile shaders
     Shader ourShader("resources/shaders/2.model_lighting.vs", "resources/shaders/2.model_lighting.fs");
     Shader screenShader("resources/shaders/anti-aliasing.vs", "resources/shaders/anti-aliasing.fs");
+    Shader skyboxShader("resources/shaders/skybox.vs", "resources/shaders/skybox.fs");
     screenShader.setInt("screenTexture", 0);
 
     // load models
@@ -172,8 +184,75 @@ int main() {
     pointLight.linear = 0.09f;
     pointLight.quadratic = 0.032f;
 
-    // draw in wireframe
-    //glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+    //postavljamo vertexe
+    //skybox
+    float skyboxVertices[] = {
+            // positions
+            -1.0f,  1.0f, -1.0f,
+            -1.0f, -1.0f, -1.0f,
+            1.0f, -1.0f, -1.0f,
+            1.0f, -1.0f, -1.0f,
+            1.0f,  1.0f, -1.0f,
+            -1.0f,  1.0f, -1.0f,
+
+            -1.0f, -1.0f,  1.0f,
+            -1.0f, -1.0f, -1.0f,
+            -1.0f,  1.0f, -1.0f,
+            -1.0f,  1.0f, -1.0f,
+            -1.0f,  1.0f,  1.0f,
+            -1.0f, -1.0f,  1.0f,
+
+            1.0f, -1.0f, -1.0f,
+            1.0f, -1.0f,  1.0f,
+            1.0f,  1.0f,  1.0f,
+            1.0f,  1.0f,  1.0f,
+            1.0f,  1.0f, -1.0f,
+            1.0f, -1.0f, -1.0f,
+
+            -1.0f, -1.0f,  1.0f,
+            -1.0f,  1.0f,  1.0f,
+            1.0f,  1.0f,  1.0f,
+            1.0f,  1.0f,  1.0f,
+            1.0f, -1.0f,  1.0f,
+            -1.0f, -1.0f,  1.0f,
+
+            -1.0f,  1.0f, -1.0f,
+            1.0f,  1.0f, -1.0f,
+            1.0f,  1.0f,  1.0f,
+            1.0f,  1.0f,  1.0f,
+            -1.0f,  1.0f,  1.0f,
+            -1.0f,  1.0f, -1.0f,
+
+            -1.0f, -1.0f, -1.0f,
+            -1.0f, -1.0f,  1.0f,
+            1.0f, -1.0f, -1.0f,
+            1.0f, -1.0f, -1.0f,
+            -1.0f, -1.0f,  1.0f,
+            1.0f, -1.0f,  1.0f
+    };
+
+    // skybox VAO
+    unsigned int skyboxVAO, skyboxVBO;
+    glGenVertexArrays(1, &skyboxVAO);
+    glGenBuffers(1, &skyboxVBO);
+    glBindVertexArray(skyboxVAO);
+    glBindBuffer(GL_ARRAY_BUFFER, skyboxVBO);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(skyboxVertices), &skyboxVertices, GL_STATIC_DRAW);
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)nullptr);
+
+    //load textures
+    vector<std::string> faces
+            {
+                    FileSystem::getPath("resources/textures/skybox/front.png"),
+                    FileSystem::getPath("resources/textures/skybox/back.png"),
+                    FileSystem::getPath("resources/textures/skybox/top.png"),
+                    FileSystem::getPath("resources/textures/skybox/bottom.png"),
+                    FileSystem::getPath("resources/textures/skybox/left.png"),
+                    FileSystem::getPath("resources/textures/skybox/right.png")
+            };
+
+    unsigned int cubeMapTexture = loadCubeMap(faces);
 
     // --------------------------------------------- ANTI-ALIASING ------------------------------------------------------------
     // vertex attributes for a quad that fills the entire screen in Normalized Device Coordinates.
@@ -222,7 +301,8 @@ int main() {
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
     // ------------------------------------------------------------------------------------------------------------------------
 
-    ourShader.use();
+    //mozda nam ne treba ovde
+    //ourShader.use();
 
     // render loop
     while (!glfwWindowShouldClose(window)) {
@@ -248,28 +328,10 @@ int main() {
 
         // don't forget to enable shader before setting uniforms
         ourShader.use();
-
-        glUniform3f(glGetUniformLocation(ourShader.ID, "dirLight.direction"), -0.2f, -1.0f, -0.3f);
-        glUniform3f(glGetUniformLocation(ourShader.ID, "dirLight.ambient"), 1.0f, 1.0f, 1.0f);
-        glUniform3f(glGetUniformLocation(ourShader.ID, "dirLight.diffuse"), 0.05f, 0.05f, 0.05);
-        glUniform3f(glGetUniformLocation(ourShader.ID, "dirLight.specular"), 0.2f, 0.2f, 0.2f);
-
-        ourShader.setVec3("lampa.position", programState->camera.Position);
-        ourShader.setVec3("lampa.direction", programState->camera.Front);
-        ourShader.setFloat("lampa.cutOff", glm::cos(glm::radians(10.0f)));
-        ourShader.setFloat("lampa.outerCutOff", glm::cos(glm::radians(15.0f)));
         ourShader.setVec3("viewPosition", programState->camera.Position);
-
-        ourShader.setVec3("lampa.ambient", 0.0f, 0.0f, 0.0f);
-        ourShader.setVec3("lampa.diffuse", 1.0f, 1.0f, 1.0f);
-        ourShader.setVec3("lampa.specular", 1.0f, 1.0f, 1.0f);
-
-        ourShader.setFloat("lampa.constant", 1.0f);
-        ourShader.setFloat("lampa.linear", 0.09f);
-        ourShader.setFloat("lampa.quadratic", 0.032f);
-
-
         ourShader.setFloat("material.shininess", 32.0f);
+        //skyboxShader.setBool("celShading", true);   //moram da proverim jos sta ovo radi zapravo
+
         // view/projection transformations
         glm::mat4 projection = glm::perspective(glm::radians(programState->camera.Zoom),
                                                 (float) SCR_WIDTH / (float) SCR_HEIGHT, 0.1f, 100.0f);
@@ -277,14 +339,73 @@ int main() {
         ourShader.setMat4("projection", projection);
         ourShader.setMat4("view", view);
 
+        // directional light
+        ourShader.setVec3("dirLight.direction", -0.2f, -1.0f, -0.3f);
+        ourShader.setVec3("dirLight.ambient", 1.0f, 1.0f, 1.0f);
+        ourShader.setVec3("dirLight.diffuse", 0.05f, 0.05f, 0.05);
+        ourShader.setVec3("dirLight.specular", 0.2f, 0.2f, 0.2f);
+
+        //ovde treba pointlajtovi
+        //nasao sam kul nacin da obradjujemo vise pointlatova ako nam treba
+
+
+        //spotlight
+
+
+        ourShader.setVec3("lampa.position", programState->camera.Position);
+        ourShader.setVec3("lampa.direction", programState->camera.Front);
+        ourShader.setVec3("lampa.ambient", 0.0f, 0.0f, 0.0f);
+        if(programState->spotlight) {
+            ourShader.setVec3("lampa.diffuse", 1.0f, 1.0f, 1.0f);
+            ourShader.setVec3("lampa.specular", 1.0f, 1.0f, 1.0f);
+        }
+        else {
+            ourShader.setVec3("lampa.diffuse", 0.0f, 0.0f, 0.0f);
+            ourShader.setVec3("lampa.specular", 0.0f, 0.0f, 0.0f);
+        }
+        ourShader.setFloat("lampa.constant", 1.0f);
+        ourShader.setFloat("lampa.linear", 0.09f);
+        ourShader.setFloat("lampa.quadratic", 0.032f);
+        ourShader.setFloat("lampa.cutOff", glm::cos(glm::radians(10.0f)));
+        ourShader.setFloat("lampa.outerCutOff", glm::cos(glm::radians(15.0f)));
+
+
         // render the loaded model
+        //backpack
         glm::mat4 model = glm::mat4(1.0f);
         model = glm::translate(model,
-                               programState->backpackPosition); // translate it down so it's at the center of the scene
-        model = glm::scale(model, glm::vec3(programState->backpackScale));    // it's a bit too big for our scene, so scale it down
+                               programState->tempPosition);
+        model = glm::scale(model, glm::vec3(programState->tempScale));
         ourShader.setMat4("model", model);
         ourModel.Draw(ourShader);
 
+        /* kada ucitavas novi model koristis ovaj templejt
+        model = glm::mat4(1.0f);
+        model = glm::translate(model, glm::vec3(programState->tempPosition));
+        model = glm::scale(model, glm::vec3(programState->tempScale));
+        model = glm::rotate(model, glm::radians(programState->tempRotation), glm::vec3(0,1,0));
+        objShader.setMat4("model", model);
+        x.Draw(objShader);
+         */
+
+        //object rendering end, start of skybox rendering
+        skyboxShader.use();
+        skyboxShader.setInt("skybox", 0);
+
+        glDepthMask(GL_FALSE);
+        glDepthFunc(GL_LEQUAL);  // change depth function so depth test passes when values are equal to depth buffer's content
+        skyboxShader.use();
+        view = glm::mat4(glm::mat3(programState->camera.GetViewMatrix())); // remove translation from the view matrix
+        skyboxShader.setMat4("view", view);
+        skyboxShader.setMat4("projection", projection);
+
+        glBindVertexArray(skyboxVAO);
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_CUBE_MAP, cubeMapTexture);
+        glDrawArrays(GL_TRIANGLES, 0, 36);
+        glBindVertexArray(0);
+        glDepthMask(GL_TRUE);
+        glDepthFunc(GL_LESS); // set depth function back to default
 
         // ANTI-ALIASING: ukljucivanje
         // *************************************************************************************************************
@@ -304,7 +425,6 @@ int main() {
         glBindTexture(GL_TEXTURE_2D_MULTISAMPLE, textureColorBufferMultiSampled);
         glDrawArrays(GL_TRIANGLES, 0, 6);
         // *************************************************************************************************************
-
 
         if (programState->ImGuiEnabled)
             DrawImGui(programState);
@@ -384,8 +504,8 @@ void DrawImGui(ProgramState *programState) {
         ImGui::SetNextWindowSize(ImVec2(500, 150));
         ImGui::Begin("Settings:");
         ImGui::ColorEdit3("Background color", (float *) &programState->clearColor);
-        ImGui::DragFloat3("Backpack position", (float*)&programState->backpackPosition);
-        ImGui::DragFloat("Backpack scale", &programState->backpackScale, 0.05, 0.1, 4.0);
+        ImGui::DragFloat3("Backpack position", (float*)&programState->tempPosition);
+        ImGui::DragFloat("Backpack scale", &programState->tempScale, 0.05, 0.1, 4.0);
         ImGui::End();
     }
 
@@ -437,6 +557,10 @@ void key_callback(GLFWwindow *window, int key, int scancode, int action, int mod
         }
 
     }
+    //mozes da iskljucis lampu ako si pravi gejmer
+    if (key == GLFW_KEY_K && action == GLFW_PRESS) {
+        programState->spotlight = !programState->spotlight;
+    }
 
     if (key == GLFW_KEY_C && action == GLFW_PRESS && programState->ImGuiEnabled) {
         programState->CameraMouseMovementUpdateEnabled = !programState->CameraMouseMovementUpdateEnabled;
@@ -457,6 +581,79 @@ void key_callback(GLFWwindow *window, int key, int scancode, int action, int mod
     if (key == GLFW_KEY_F3 && action == GLFW_PRESS)
         programState->grayscaleEnabled = !programState->grayscaleEnabled;
 
+}
+
+unsigned int loadTexture(char const * path)
+{
+    unsigned int textureID;
+    glGenTextures(1, &textureID);
+
+    int width, height, nrComponents;
+    unsigned char *data = stbi_load(path, &width, &height, &nrComponents, 0);
+    if (data)
+    {
+        GLenum format = GL_RED;
+        if (nrComponents == 1)
+            format = GL_RED;
+        else if (nrComponents == 3)
+            format = GL_RGB;
+        else if (nrComponents == 4)
+            format = GL_RGBA;
+
+        glBindTexture(GL_TEXTURE_2D, textureID);
+        glTexImage2D(GL_TEXTURE_2D, 0, format, width, height, 0, format, GL_UNSIGNED_BYTE, data);
+        glGenerateMipmap(GL_TEXTURE_2D);
 
 
+        if(nullptr != strstr(path, "grass.png")){
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+
+        }
+        else {
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+        }
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+
+        stbi_image_free(data);
+    }
+    else
+    {
+        std::cout << "Texture failed to load at path: " << path << std::endl;
+        stbi_image_free(data);
+    }
+
+    return textureID;
+}
+
+unsigned int loadCubeMap(vector<std::string> faces)
+{
+    unsigned int textureID;
+    glGenTextures(1, &textureID);
+    glBindTexture(GL_TEXTURE_CUBE_MAP, textureID);
+
+    int width, height, nrChannels;
+    for (unsigned int i = 0; i < faces.size(); i++)
+    {
+        unsigned char *data = stbi_load(faces[i].c_str(), &width, &height, &nrChannels, 0);
+        if (data)
+        {
+            glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, 0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, data);
+            stbi_image_free(data);
+        }
+        else
+        {
+            std::cout << "CubeMap texture failed to load at path: " << faces[i] << std::endl;
+            stbi_image_free(data);
+        }
+    }
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
+
+    return textureID;
 }
