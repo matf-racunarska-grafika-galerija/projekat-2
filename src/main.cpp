@@ -190,12 +190,13 @@ int main() {
 
     //postavljamo vertexe
     //podloga
+
     float podlogaVertices[] = {
             // positions          // texture coords
-            200.0f,  0.0f, -200.0f,   200.0f, 200.0f, // top right
-            200.0f, 0.0f, 200.0f,   200.0f, 0.0f, // bottom right
-            -200.0f, 0.0f, 200.0f,   0.0f, 0.0f, // bottom left
-            -200.0f,  0.0f, -200.0f,   0.0f, 200.0f  // top left
+            200.0f,  0.0f, -200.0f, 0.0f, 1.0f, 0.0f,   200.0f, 200.0f, // top right
+            200.0f, 0.0f, 200.0f, 0.0f, 1.0f, 0.0f,  200.0f, 0.0f, // bottom right
+            -200.0f, 0.0f, 200.0f,  0.0f, 1.0f, 0.0f, 0.0f, 0.0f, // bottom left
+            -200.0f,  0.0f, -200.0f, 0.0f, 1.0f, 0.0f,  0.0f, 200.0f  // top left
     };
     unsigned int podlogaIndices[] = {
             0, 1, 3, // first triangle
@@ -263,11 +264,17 @@ int main() {
     glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(podlogaIndices), podlogaIndices, GL_STATIC_DRAW);
 
     // position attribute
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)0);
     glEnableVertexAttribArray(0);
     // texture coord attribute
-    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)(3 * sizeof(float)));
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)(3 * sizeof(float)));
     glEnableVertexAttribArray(1);
+
+    glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)(6 * sizeof(float)));
+    glEnableVertexAttribArray(2);
+
+    unsigned int diffuseMap = loadTexture(FileSystem::getPath("resources/textures/grass_diffuse.png").c_str());
+    unsigned int specularMap = loadTexture(FileSystem::getPath("resources/textures/grass_specular.png").c_str());    //treba crna slika
 
     // skybox VAO
     unsigned int skyboxVAO, skyboxVBO;
@@ -292,8 +299,6 @@ int main() {
 
     //texture loading
     // -------------------------
-    unsigned int diffuseMap = loadTexture(FileSystem::getPath("resources/textures/grass_diffuse.png").c_str());
-    unsigned int specularMap = loadTexture(FileSystem::getPath("resources/textures/grass_specular.png").c_str());    //treba crna slika
     unsigned int cubeMapTexture = loadCubeMap(faces);
 
     // --------------------------------------------- ANTI-ALIASING ------------------------------------------------------------
@@ -343,12 +348,6 @@ int main() {
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
     // ------------------------------------------------------------------------------------------------------------------------
 
-    //za sempler
-    objShader.use();
-    objShader.setInt("material.texture_diffuse1", 0);
-    objShader.setInt("material.texture_specular1", 1);
-
-
     // render loop
     while (!glfwWindowShouldClose(window)) {
         // per-frame time logic
@@ -360,8 +359,6 @@ int main() {
         processInput(window);
 
         // render
-        glClearColor(programState->clearColor.r, programState->clearColor.g, programState->clearColor.b, 1.0f);
-        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
         // ANTI-ALIASING: preusmeravamo renderovanje na nas framebuffer da bismo imali MSAA
         // *************************************************************************************************************
@@ -370,6 +367,7 @@ int main() {
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
         glEnable(GL_DEPTH_TEST);
         // *************************************************************************************************************
+
 
         //object shader
         objShader.use();
@@ -387,7 +385,7 @@ int main() {
 
         // directional light
         objShader.setVec3("dirLight.direction", -0.2f, -1.0f, -0.3f);
-        objShader.setVec3("dirLight.ambient", 1.0f, 1.0f, 1.0f);
+        objShader.setVec3("dirLight.ambient", 0.0f, 0.0f, 0.0f);
         objShader.setVec3("dirLight.diffuse", 0.05f, 0.05f, 0.05);
         objShader.setVec3("dirLight.specular", 0.2f, 0.2f, 0.2f);
 
@@ -427,19 +425,27 @@ int main() {
         objShader.setMat4("model", model);
         flashlightModel.Draw(objShader);
 
+
         //podloga
+        //objShader.setInt("material.texture_diffuse1", 0);
+        //objShader.setInt("material.texture_specular1", 1);
+
         glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_2D, diffuseMap);
         glActiveTexture(GL_TEXTURE1);
         glBindTexture(GL_TEXTURE_2D, specularMap);
 
+        model = glm::mat4(1.0f); // make sure to initialize matrix to identity matrix first
+
+
+        objShader.setMat4("model", model);
+        objShader.setMat4("view", view);
+        // note: currently we set the projection matrix each frame, but since the projection matrix rarely changes it's often best practice to set it outside the main loop only once.
+        objShader.setMat4("projection", projection);
+
         glBindVertexArray(podlogaVAO);
 
-        model = glm::mat4(1.0f);
-        objShader.setMat4("model", model);
-
         glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
-
 
 
 
@@ -681,6 +687,7 @@ glm::mat4 CalcFlashlightPosition() {
 
 unsigned int loadTexture(char const * path)
 {
+
     unsigned int textureID;
     glGenTextures(1, &textureID);
 
