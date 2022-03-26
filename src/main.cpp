@@ -165,7 +165,6 @@ int main() {
     Shader objShader("resources/shaders/2.model_lighting.vs", "resources/shaders/2.model_lighting.fs");
     Shader screenShader("resources/shaders/anti-aliasing.vs", "resources/shaders/anti-aliasing.fs");
     Shader skyboxShader("resources/shaders/skybox.vs", "resources/shaders/skybox.fs");
-    Shader podlogaShader("resources/shaders/cubemaps.vs", "resources/shaders/cubemaps.fs");
     screenShader.setInt("screenTexture", 0);
 
     // load models
@@ -190,7 +189,18 @@ int main() {
     pointLight.quadratic = 0.032f;
 
     //postavljamo vertexe
-    //
+    //podloga
+    float podlogaVertices[] = {
+            // positions          // texture coords
+            200.0f,  0.0f, -200.0f,   200.0f, 200.0f, // top right
+            200.0f, 0.0f, 200.0f,   200.0f, 0.0f, // bottom right
+            -200.0f, 0.0f, 200.0f,   0.0f, 0.0f, // bottom left
+            -200.0f,  0.0f, -200.0f,   0.0f, 200.0f  // top left
+    };
+    unsigned int podlogaIndices[] = {
+            0, 1, 3, // first triangle
+            1, 2, 3  // second triangle
+    };
 
     //skybox
     float skyboxVertices[] = {
@@ -238,6 +248,27 @@ int main() {
             1.0f, -1.0f,  1.0f
     };
 
+    //podloga VAO
+    unsigned int podlogaVBO, podlogaVAO, podlogaEBO;
+    glGenVertexArrays(1, &podlogaVAO);
+    glGenBuffers(1, &podlogaVBO);
+    glGenBuffers(1, &podlogaEBO);
+
+    glBindVertexArray(podlogaVAO);
+
+    glBindBuffer(GL_ARRAY_BUFFER, podlogaVBO);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(podlogaVertices), podlogaVertices, GL_STATIC_DRAW);
+
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, podlogaEBO);
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(podlogaIndices), podlogaIndices, GL_STATIC_DRAW);
+
+    // position attribute
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)0);
+    glEnableVertexAttribArray(0);
+    // texture coord attribute
+    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)(3 * sizeof(float)));
+    glEnableVertexAttribArray(1);
+
     // skybox VAO
     unsigned int skyboxVAO, skyboxVBO;
     glGenVertexArrays(1, &skyboxVAO);
@@ -259,6 +290,10 @@ int main() {
                     FileSystem::getPath("resources/textures/skybox/right.png")
             };
 
+    //texture loading
+    // -------------------------
+    unsigned int diffuseMap = loadTexture(FileSystem::getPath("resources/textures/grass_diffuse.png").c_str());
+    unsigned int specularMap = loadTexture(FileSystem::getPath("resources/textures/grass_specular.png").c_str());    //treba crna slika
     unsigned int cubeMapTexture = loadCubeMap(faces);
 
     // --------------------------------------------- ANTI-ALIASING ------------------------------------------------------------
@@ -308,6 +343,12 @@ int main() {
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
     // ------------------------------------------------------------------------------------------------------------------------
 
+    //za sempler
+    objShader.use();
+    objShader.setInt("material.texture_diffuse1", 0);
+    objShader.setInt("material.texture_specular1", 1);
+
+
     // render loop
     while (!glfwWindowShouldClose(window)) {
         // per-frame time logic
@@ -330,7 +371,7 @@ int main() {
         glEnable(GL_DEPTH_TEST);
         // *************************************************************************************************************
 
-        // don't forget to enable shader before setting uniforms
+        //object shader
         objShader.use();
         objShader.setVec3("viewPosition", programState->camera.Position);
         objShader.setFloat("material.shininess", 32.0f);
@@ -346,7 +387,7 @@ int main() {
 
         // directional light
         objShader.setVec3("dirLight.direction", -0.2f, -1.0f, -0.3f);
-        objShader.setVec3("dirLight.ambient", 0.0f, 0.0f, 0.0f);
+        objShader.setVec3("dirLight.ambient", 1.0f, 1.0f, 1.0f);
         objShader.setVec3("dirLight.diffuse", 0.05f, 0.05f, 0.05);
         objShader.setVec3("dirLight.specular", 0.2f, 0.2f, 0.2f);
 
@@ -385,6 +426,21 @@ int main() {
         model = CalcFlashlightPosition();
         objShader.setMat4("model", model);
         flashlightModel.Draw(objShader);
+
+        //podloga
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, diffuseMap);
+        glActiveTexture(GL_TEXTURE1);
+        glBindTexture(GL_TEXTURE_2D, specularMap);
+
+        glBindVertexArray(podlogaVAO);
+
+        model = glm::mat4(1.0f);
+        objShader.setMat4("model", model);
+
+        glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
+
+
 
 
         /* kada ucitavas novi model koristis ovaj templejt
@@ -632,7 +688,7 @@ unsigned int loadTexture(char const * path)
     unsigned char *data = stbi_load(path, &width, &height, &nrComponents, 0);
     if (data)
     {
-        GLenum format = GL_RED;
+        GLenum format;
         if (nrComponents == 1)
             format = GL_RED;
         else if (nrComponents == 3)
@@ -644,16 +700,8 @@ unsigned int loadTexture(char const * path)
         glTexImage2D(GL_TEXTURE_2D, 0, format, width, height, 0, format, GL_UNSIGNED_BYTE, data);
         glGenerateMipmap(GL_TEXTURE_2D);
 
-
-        if(nullptr != strstr(path, "grass.png")){
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-
-        }
-        else {
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-        }
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 
