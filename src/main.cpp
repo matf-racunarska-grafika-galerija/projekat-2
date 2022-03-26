@@ -162,9 +162,10 @@ int main() {
     glEnable(GL_DEPTH_TEST);
 
     // build and compile shaders
-    Shader ourShader("resources/shaders/2.model_lighting.vs", "resources/shaders/2.model_lighting.fs");
+    Shader objShader("resources/shaders/2.model_lighting.vs", "resources/shaders/2.model_lighting.fs");
     Shader screenShader("resources/shaders/anti-aliasing.vs", "resources/shaders/anti-aliasing.fs");
     Shader skyboxShader("resources/shaders/skybox.vs", "resources/shaders/skybox.fs");
+    Shader podlogaShader("resources/shaders/cubemaps.vs", "resources/shaders/cubemaps.fs");
     screenShader.setInt("screenTexture", 0);
 
     // load models
@@ -189,6 +190,8 @@ int main() {
     pointLight.quadratic = 0.032f;
 
     //postavljamo vertexe
+    //
+
     //skybox
     float skyboxVertices[] = {
             // positions
@@ -328,24 +331,24 @@ int main() {
         // *************************************************************************************************************
 
         // don't forget to enable shader before setting uniforms
-        ourShader.use();
-        ourShader.setVec3("viewPosition", programState->camera.Position);
-        ourShader.setFloat("material.shininess", 32.0f);
+        objShader.use();
+        objShader.setVec3("viewPosition", programState->camera.Position);
+        objShader.setFloat("material.shininess", 32.0f);
         //skyboxShader.setBool("celShading", true);   //moram da proverim jos sta ovo radi zapravo
 
         // view/projection transformations
         glm::mat4 projection = glm::perspective(glm::radians(programState->camera.Zoom),
                                                 (float) SCR_WIDTH / (float) SCR_HEIGHT, 0.1f, 100.0f);
         glm::mat4 view = programState->camera.GetViewMatrix();
-        ourShader.setMat4("projection", projection);
-        ourShader.setMat4("view", view);
+        objShader.setMat4("projection", projection);
+        objShader.setMat4("view", view);
 
 
         // directional light
-        ourShader.setVec3("dirLight.direction", -0.2f, -1.0f, -0.3f);
-        ourShader.setVec3("dirLight.ambient", 0.0f, 0.0f, 0.0f);
-        ourShader.setVec3("dirLight.diffuse", 0.05f, 0.05f, 0.05);
-        ourShader.setVec3("dirLight.specular", 0.2f, 0.2f, 0.2f);
+        objShader.setVec3("dirLight.direction", -0.2f, -1.0f, -0.3f);
+        objShader.setVec3("dirLight.ambient", 0.0f, 0.0f, 0.0f);
+        objShader.setVec3("dirLight.diffuse", 0.05f, 0.05f, 0.05);
+        objShader.setVec3("dirLight.specular", 0.2f, 0.2f, 0.2f);
 
         //ovde treba pointlajtovi
         //nasao sam kul nacin da obradjujemo vise pointlatova ako nam treba
@@ -354,34 +357,34 @@ int main() {
         //spotlight
 
 
-        ourShader.setVec3("lampa.position", programState->camera.Position);
-        ourShader.setVec3("lampa.direction", programState->camera.Front);
-        ourShader.setVec3("lampa.ambient", 0.0f, 0.0f, 0.0f);
+        objShader.setVec3("lampa.position", programState->camera.Position);
+        objShader.setVec3("lampa.direction", programState->camera.Front);
+        objShader.setVec3("lampa.ambient", 0.0f, 0.0f, 0.0f);
         if(programState->spotlight) {
-            ourShader.setVec3("lampa.diffuse", 1.0f, 1.0f, 1.0f);
-            ourShader.setVec3("lampa.specular", 1.0f, 1.0f, 1.0f);
+            objShader.setVec3("lampa.diffuse", 1.0f, 1.0f, 1.0f);
+            objShader.setVec3("lampa.specular", 1.0f, 1.0f, 1.0f);
         }
         else {
-            ourShader.setVec3("lampa.diffuse", 0.0f, 0.0f, 0.0f);
-            ourShader.setVec3("lampa.specular", 0.0f, 0.0f, 0.0f);
+            objShader.setVec3("lampa.diffuse", 0.0f, 0.0f, 0.0f);
+            objShader.setVec3("lampa.specular", 0.0f, 0.0f, 0.0f);
         }
-        ourShader.setFloat("lampa.constant", 1.0f);
-        ourShader.setFloat("lampa.linear", 0.09f);
-        ourShader.setFloat("lampa.quadratic", 0.032f);
-        ourShader.setFloat("lampa.cutOff", glm::cos(glm::radians(10.0f)));
-        ourShader.setFloat("lampa.outerCutOff", glm::cos(glm::radians(15.0f)));
+        objShader.setFloat("lampa.constant", 1.0f);
+        objShader.setFloat("lampa.linear", 0.09f);
+        objShader.setFloat("lampa.quadratic", 0.032f);
+        objShader.setFloat("lampa.cutOff", glm::cos(glm::radians(10.0f)));
+        objShader.setFloat("lampa.outerCutOff", glm::cos(glm::radians(15.0f)));
 
         // renderovanje ranca:
         glm::mat4 model = glm::mat4(1.0f);
         model = glm::translate(model,programState->tempPosition);
         model = glm::scale(model, glm::vec3(programState->tempScale));
-        ourShader.setMat4("model", model);
-        ourModel.Draw(ourShader);
+        objShader.setMat4("model", model);
+        ourModel.Draw(objShader);
 
         // renderovanje baterijske lampe:
         model = CalcFlashlightPosition();
-        ourShader.setMat4("model", model);
-        flashlightModel.Draw(ourShader);
+        objShader.setMat4("model", model);
+        flashlightModel.Draw(objShader);
 
 
         /* kada ucitavas novi model koristis ovaj templejt
@@ -465,6 +468,10 @@ void processInput(GLFWwindow *window) {
         programState->camera.ProcessKeyboard(LEFT, deltaTime);
     if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS)
         programState->camera.ProcessKeyboard(RIGHT, deltaTime);
+    if (glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS)
+        programState->camera.ProcessKeyboard(DOWN, deltaTime);
+    if (glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS)
+        programState->camera.ProcessKeyboard(UP, deltaTime);
 }
 
 // glfw: whenever the window size changed (by OS or user resize) this callback function executes
