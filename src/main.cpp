@@ -169,14 +169,17 @@ int main() {
 
     // load models
     Model ourModel("resources/objects/backpack/backpack.obj");
+    ourModel.SetShaderTextureNamePrefix("material.");
+
+    Model ulicnaSvetiljka("resources/objects/Street Lamp2/StreetLamp.obj");
+    ulicnaSvetiljka.SetShaderTextureNamePrefix("material.");
 
     // iz nekog razloga mora da se obrne tekstura
     stbi_set_flip_vertically_on_load(false);
     Model flashlightModel("resources/objects/flashlight/flashlight.obj");
+    flashlightModel.SetShaderTextureNamePrefix("material.");
     stbi_set_flip_vertically_on_load(true);
 
-    ourModel.SetShaderTextureNamePrefix("material.");
-    flashlightModel.SetShaderTextureNamePrefix("material.");
 
     PointLight& pointLight = programState->pointLight;
     pointLight.position = glm::vec3(4.0f, 4.0, 0.0);
@@ -425,6 +428,15 @@ int main() {
         objShader.setMat4("model", model);
         flashlightModel.Draw(objShader);
 
+        //renderovanje lampe
+        for(int i = 0; i < 5; i++) {
+            model = glm::mat4(1.0f);
+            model = glm::translate(model, glm::vec3(-4.0f, 0.0f, i * 4.0f));
+            model = glm::scale(model, glm::vec3(0.4f));
+            model = glm::rotate(model, glm::radians(programState->tempRotation), glm::vec3(0, 1, 0));
+            objShader.setMat4("model", model);
+            ulicnaSvetiljka.Draw(objShader);
+        }
 
         //podloga
         //mozda ispred while
