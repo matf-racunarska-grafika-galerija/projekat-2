@@ -54,6 +54,7 @@ struct ProgramState {
     bool CameraMouseMovementUpdateEnabled = true;
     bool spotlight = true;
     PointLight pointLight;
+    float whiteAmbientLightStrength = 0.0f;
     bool grayscaleEnabled = false;
     bool AAEnabled = true;
 
@@ -78,7 +79,8 @@ void ProgramState::SaveToFile(std::string filename) {
         << camera.Front.x << '\n'
         << camera.Front.y << '\n'
         << camera.Front.z << '\n'
-        << spotlight << '\n';
+        << spotlight << '\n'
+        << whiteAmbientLightStrength << '\n';
 }
 void ProgramState::LoadFromFile(std::string filename) {
     std::ifstream in(filename);
@@ -92,7 +94,8 @@ void ProgramState::LoadFromFile(std::string filename) {
            >> camera.Front.x
            >> camera.Front.y
            >> camera.Front.z
-           >> spotlight;
+           >> spotlight
+           >> whiteAmbientLightStrength;
     }
 }
 ProgramState *programState;
@@ -392,7 +395,7 @@ int main() {
 
         // directional light
         objShader.setVec3("dirLight.direction", -0.2f, -1.0f, -0.3f);
-        objShader.setVec3("dirLight.ambient", 1.0f, 1.0f, 1.0f);
+        objShader.setVec3("dirLight.ambient", glm::vec3(programState->whiteAmbientLightStrength));
         objShader.setVec3("dirLight.diffuse", 0.05f, 0.05f, 0.05);
         objShader.setVec3("dirLight.specular", 0.2f, 0.2f, 0.2f);
 
@@ -638,7 +641,7 @@ void DrawImGui(ProgramState *programState) {
         ImGui::SetNextWindowPos(ImVec2(0,0));
         ImGui::SetNextWindowSize(ImVec2(500, 150));
         ImGui::Begin("Settings:");
-        ImGui::ColorEdit3("Background color", (float *) &programState->clearColor);
+        ImGui::DragFloat("Ambient Light Strength", (float *) &programState->whiteAmbientLightStrength, 0.005f, 0.0f, 1.0f);
         ImGui::DragFloat3("Backpack position", (float*)&programState->tempPosition);
         ImGui::DragFloat("Backpack scale", &programState->tempScale, 0.05, 0.1, 4.0);
         ImGui::End();
