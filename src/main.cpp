@@ -140,6 +140,8 @@ int main() {
     }
 
     glEnable(GL_DEPTH_TEST);
+    glEnable(GL_CULL_FACE);
+    glCullFace(GL_BACK);
 
     // tell stb_image.h to flip loaded textures on the y-axis (before loading model).
     stbi_set_flip_vertically_on_load(true);
@@ -159,8 +161,6 @@ int main() {
     ImGui_ImplGlfw_InitForOpenGL(window, true);
     ImGui_ImplOpenGL3_Init("#version 330 core");
 
-    glEnable(GL_DEPTH_TEST);
-
     // build and compile shaders
     Shader objShader("resources/shaders/2.model_lighting.vs", "resources/shaders/2.model_lighting.fs");
     Shader screenShader("resources/shaders/anti-aliasing.vs", "resources/shaders/anti-aliasing.fs");
@@ -171,8 +171,8 @@ int main() {
     Model ourModel("resources/objects/backpack/backpack.obj");
     ourModel.SetShaderTextureNamePrefix("material.");
 
-    Model ulicnaSvetiljka("resources/objects/Street Lamp2/StreetLamp.obj");
-    ulicnaSvetiljka.SetShaderTextureNamePrefix("material.");
+    Model ulicnaSvetiljkaModel("resources/objects/Street Lamp2/StreetLamp.obj");
+    ulicnaSvetiljkaModel.SetShaderTextureNamePrefix("material.");
 
     // iz nekog razloga mora da se obrne tekstura
     stbi_set_flip_vertically_on_load(false);
@@ -351,6 +351,10 @@ int main() {
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
     // ------------------------------------------------------------------------------------------------------------------------
 
+    // ako se obrise ovo nista se ne menja ¯\_(ツ)_/¯
+    objShader.setInt("material.texture_diffuse1", 0);
+    objShader.setInt("material.texture_specular1", 1);
+
     // render loop
     while (!glfwWindowShouldClose(window)) {
         // per-frame time logic
@@ -388,7 +392,7 @@ int main() {
 
         // directional light
         objShader.setVec3("dirLight.direction", -0.2f, -1.0f, -0.3f);
-        objShader.setVec3("dirLight.ambient", 0.0f, 0.0f, 0.0f);
+        objShader.setVec3("dirLight.ambient", 1.0f, 1.0f, 1.0f);
         objShader.setVec3("dirLight.diffuse", 0.05f, 0.05f, 0.05);
         objShader.setVec3("dirLight.specular", 0.2f, 0.2f, 0.2f);
 
@@ -435,13 +439,13 @@ int main() {
             model = glm::scale(model, glm::vec3(0.4f));
             model = glm::rotate(model, glm::radians(programState->tempRotation), glm::vec3(0, 1, 0));
             objShader.setMat4("model", model);
-            ulicnaSvetiljka.Draw(objShader);
+            ulicnaSvetiljkaModel.Draw(objShader);
         }
 
         //podloga
+        glDisable(GL_CULL_FACE);
         //mozda ispred while
-        objShader.setInt("material.texture_diffuse1", 0);
-        objShader.setInt("material.texture_specular1", 1);
+
 
         glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_2D, diffuseMap);
@@ -455,7 +459,7 @@ int main() {
         //objShader.setFloat("material.shininess", 32.0f);
         glBindVertexArray(podlogaVAO);
         glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
-
+        glEnable(GL_CULL_FACE);
 
 
         /* kada ucitavas novi model koristis ovaj templejt
