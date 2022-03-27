@@ -21,7 +21,6 @@ void mouse_callback(GLFWwindow *window, double xpos, double ypos);
 void scroll_callback(GLFWwindow *window, double xoffset, double yoffset);
 void key_callback(GLFWwindow *window, int key, int scancode, int action, int mods);
 void processInput(GLFWwindow *window);
-unsigned int loadTexture(const char *path);
 unsigned int loadCubeMap(vector<std::string> faces);
 
 // settings
@@ -100,10 +99,10 @@ void ProgramState::LoadFromFile(std::string filename) {
 }
 ProgramState *programState;
 
-
 void DrawImGui(ProgramState *programState);
 
 glm::mat4 CalcFlashlightPosition();
+
 
 int main() {
     // glfw: initialize and configure
@@ -167,8 +166,8 @@ int main() {
     // build and compile shaders
     Shader objShader("resources/shaders/2.model_lighting.vs", "resources/shaders/2.model_lighting.fs");
     Shader screenShader("resources/shaders/anti-aliasing.vs", "resources/shaders/anti-aliasing.fs");
+    Shader simpleDepthShader("resources/shaders/depthShader.vs", "resources/shaders/depthShader.fs", "resources/shaders/depthShader.gs");
     Shader skyboxShader("resources/shaders/skybox.vs", "resources/shaders/skybox.fs");
-    screenShader.setInt("screenTexture", 0);
 
     // load models
     Model ourModel("resources/objects/backpack/backpack.obj");
@@ -279,9 +278,6 @@ int main() {
     glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)(6 * sizeof(float)));
     glEnableVertexAttribArray(2);
 
-    unsigned int diffuseMap = loadTexture(FileSystem::getPath("resources/textures/grass_diffuse.png").c_str());
-    unsigned int specularMap = loadTexture(FileSystem::getPath("resources/textures/grass_specular.png").c_str());
-
     // skybox VAO
     unsigned int skyboxVAO, skyboxVBO;
     glGenVertexArrays(1, &skyboxVAO);
@@ -306,6 +302,9 @@ int main() {
     //texture loading
     // -------------------------
     unsigned int cubeMapTexture = loadCubeMap(faces);
+    // uklonio sam loadTexture funkciju jer vec imamo njen ekvivalent u model.h fajlu
+    unsigned int podlogaDiffuseMap = TextureFromFile("grass_diffuse.png", "resources/textures");
+    unsigned int podlogaSpecularMap = TextureFromFile("grass_specular.png", "resources/textures");
 
     // --------------------------------------------- ANTI-ALIASING ------------------------------------------------------------
     // vertex attributes for a quad that fills the entire screen in Normalized Device Coordinates.
@@ -354,9 +353,40 @@ int main() {
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
     // ------------------------------------------------------------------------------------------------------------------------
 
-    // ako se obrise ovo nista se ne menja ¯\_(ツ)_/¯
+    // za pointlajt
+    glm::vec3 lightPos(-5.0f, 4.0f, -5.0f);
+
+    const unsigned int SHADOW_WIDTH = 1024, SHADOW_HEIGHT = 1024;
+
+    unsigned int depthMapFBO;
+    glGenFramebuffers(1, &depthMapFBO);
+    unsigned int depthCubeMap;
+    glGenTextures(1, &depthCubeMap);
+    glBindTexture(GL_TEXTURE_CUBE_MAP, depthCubeMap);
+    for(int i = 0; i < 6; i++)
+        glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, 0, GL_DEPTH_COMPONENT, SHADOW_WIDTH, SHADOW_HEIGHT, 0, GL_DEPTH_COMPONENT, GL_FLOAT, NULL);
+
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_BORDER);
+
+    glBindFramebuffer(GL_FRAMEBUFFER, depthMapFBO);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, depthCubeMap, 0);
+    // u ovaj framebuffer necemo da renderujemo boju, jer ce da cuva samo dubinu fragmenata
+    glDrawBuffer(GL_NONE);
+    glReadBuffer(GL_NONE);
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+    // konfiguracija shadera
+    screenShader.use();
+    screenShader.setInt("screenTexture", 0);
+
+    objShader.use();
     objShader.setInt("material.texture_diffuse1", 0);
     objShader.setInt("material.texture_specular1", 1);
+    objShader.setInt("depthMap", 2);
 
     // render loop
     while (!glfwWindowShouldClose(window)) {
@@ -368,7 +398,75 @@ int main() {
         // input
         processInput(window);
 
+        glm::mat4 model = glm::mat4(1.0f);
+
+        // renderovanje scene iz pozicije svetla
+        // -------------------------------------------
+        glBindFramebuffer(GL_FRAMEBUFFER, framebuffer);
+        glClearColor(programState->clearColor.r, programState->clearColor.g, programState->clearColor.b, 1.0f);
+
+
+        float near_plane = 1.0f;
+        float far_plane  = 25.0f;
+        glm::mat4 shadowProj = glm::perspective(glm::radians(90.0f), (float)SHADOW_WIDTH / (float)SHADOW_HEIGHT, near_plane, far_plane);
+        std::vector<glm::mat4> shadowTransforms;
+        shadowTransforms.push_back(shadowProj * glm::lookAt(lightPos, lightPos + glm::vec3( 1.0f,  0.0f,  0.0f), glm::vec3(0.0f, -1.0f,  0.0f)));
+        shadowTransforms.push_back(shadowProj * glm::lookAt(lightPos, lightPos + glm::vec3(-1.0f,  0.0f,  0.0f), glm::vec3(0.0f, -1.0f,  0.0f)));
+        shadowTransforms.push_back(shadowProj * glm::lookAt(lightPos, lightPos + glm::vec3( 0.0f,  1.0f,  0.0f), glm::vec3(0.0f,  0.0f,  1.0f)));
+        shadowTransforms.push_back(shadowProj * glm::lookAt(lightPos, lightPos + glm::vec3( 0.0f, -1.0f,  0.0f), glm::vec3(0.0f,  0.0f, -1.0f)));
+        shadowTransforms.push_back(shadowProj * glm::lookAt(lightPos, lightPos + glm::vec3( 0.0f,  0.0f,  1.0f), glm::vec3(0.0f, -1.0f,  0.0f)));
+        shadowTransforms.push_back(shadowProj * glm::lookAt(lightPos, lightPos + glm::vec3( 0.0f,  0.0f, -1.0f), glm::vec3(0.0f, -1.0f,  0.0f)));
+
+        glViewport(0, 0, SHADOW_WIDTH, SHADOW_HEIGHT);
+        glBindFramebuffer(GL_FRAMEBUFFER, depthMapFBO);
+            glClear(GL_DEPTH_BUFFER_BIT);
+
+            simpleDepthShader.use();
+            for(unsigned int i = 0; i < 6; i++)
+                simpleDepthShader.setMat4("shadowMatrices[" + std::to_string((i)) +"]", shadowTransforms[i]);
+            simpleDepthShader.setFloat("far_plane", far_plane);
+            simpleDepthShader.setVec3("lightPos", lightPos);
+
+            // renderovanje ranca:
+            model = glm::mat4(1.0f);
+            model = glm::translate(model,programState->tempPosition);
+            model = glm::scale(model, glm::vec3(programState->tempScale));
+            simpleDepthShader.setMat4("model", model);
+            ourModel.Draw(simpleDepthShader);
+
+    
+            //renderovanje lampe
+            for(int i = 0; i < 5; i++) {
+                model = glm::mat4(1.0f);
+                model = glm::translate(model, glm::vec3(-4.0f, 0.0f, i * 4.0f));
+                model = glm::scale(model, glm::vec3(0.4f));
+                model = glm::rotate(model, glm::radians(programState->tempRotation), glm::vec3(0, 1, 0));
+                simpleDepthShader.setMat4("model", model);
+                ulicnaSvetiljkaModel.Draw(simpleDepthShader);
+            }
+    
+            //podloga
+
+            glActiveTexture(GL_TEXTURE0);
+            glBindTexture(GL_TEXTURE_2D, podlogaDiffuseMap);
+            glActiveTexture(GL_TEXTURE1);
+            glBindTexture(GL_TEXTURE_2D, podlogaSpecularMap);
+
+            model = glm::mat4(1.0f);
+            simpleDepthShader.setMat4("model", model);
+
+            //za blinfonga treba shinnes 4* veci al trava ne sme da se presijava bas tako da tu treba obratiti paznju
+            //simpleDepthShader.setFloat("material.shininess", 32.0f);
+            glBindVertexArray(podlogaVAO);
+            glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
+
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+        // -------------------------------------------
+
         // render
+
+        glViewport(0, 0, SCR_WIDTH, SCR_HEIGHT);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
         // ANTI-ALIASING: preusmeravamo renderovanje na nas framebuffer da bismo imali MSAA
         // *************************************************************************************************************
@@ -402,10 +500,19 @@ int main() {
         //ovde treba pointlajtovi
         //nasao sam kul nacin da obradjujemo vise pointlatova ako nam treba
 
+        // jedan pointlajt za testiranje senki
+//        lightPos.x = sin(glfwGetTime()) * 3.0f;
+//        lightPos.z = cos(glfwGetTime()) * 2.0f;
+//        lightPos.y = 5.0 + cos(glfwGetTime()) * 1.0f;
+        objShader.setVec3("pointLight.position", lightPos);
+        objShader.setVec3("pointLight.ambient", glm::vec3(1.0f));
+        objShader.setVec3("pointLight.diffuse", 0.05f, 0.05f, 0.05);
+        objShader.setVec3("pointLight.specular", 0.2f, 0.2f, 0.2f);
+        objShader.setFloat("pointLight.constant", 1.0f);
+        objShader.setFloat("pointLight.linear", 0.09f);
+        objShader.setFloat("pointLight.quadratic", 0.032f);
 
         //spotlight
-
-
         objShader.setVec3("lampa.position", programState->camera.Position);
         objShader.setVec3("lampa.direction", programState->camera.Front);
         objShader.setVec3("lampa.ambient", 0.0f, 0.0f, 0.0f);
@@ -423,8 +530,13 @@ int main() {
         objShader.setFloat("lampa.cutOff", glm::cos(glm::radians(10.0f)));
         objShader.setFloat("lampa.outerCutOff", glm::cos(glm::radians(15.0f)));
 
+        objShader.setFloat("far_plane", far_plane);
+
+        glActiveTexture(GL_TEXTURE2);
+        glBindTexture(GL_TEXTURE_CUBE_MAP, depthCubeMap);
+
         // renderovanje ranca:
-        glm::mat4 model = glm::mat4(1.0f);
+        model = glm::mat4(1.0f);
         model = glm::translate(model,programState->tempPosition);
         model = glm::scale(model, glm::vec3(programState->tempScale));
         objShader.setMat4("model", model);
@@ -447,13 +559,11 @@ int main() {
 
         //podloga
         glDisable(GL_CULL_FACE);
-        //mozda ispred while
-
 
         glActiveTexture(GL_TEXTURE0);
-        glBindTexture(GL_TEXTURE_2D, diffuseMap);
+        glBindTexture(GL_TEXTURE_2D, podlogaDiffuseMap);
         glActiveTexture(GL_TEXTURE1);
-        glBindTexture(GL_TEXTURE_2D, specularMap);
+        glBindTexture(GL_TEXTURE_2D, podlogaSpecularMap);
 
         model = glm::mat4(1.0f);
         objShader.setMat4("model", model);
@@ -480,7 +590,7 @@ int main() {
 
         glDepthMask(GL_FALSE);
         glDepthFunc(GL_LEQUAL);  // change depth function so depth test passes when values are equal to depth buffer's content
-        skyboxShader.use();
+
         view = glm::mat4(glm::mat3(programState->camera.GetViewMatrix())); // remove translation from the view matrix
         skyboxShader.setMat4("view", view);
         skyboxShader.setMat4("projection", projection);
@@ -687,6 +797,7 @@ void DrawImGui(ProgramState *programState) {
     ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 }
 
+
 glm::mat4 CalcFlashlightPosition() {
     Camera c = programState->camera;
 
@@ -699,44 +810,6 @@ glm::mat4 CalcFlashlightPosition() {
     model = glm::scale(model, glm::vec3(0.025f));
 
     return model;
-    }
-
-unsigned int loadTexture(char const * path)
-{
-
-    unsigned int textureID;
-    glGenTextures(1, &textureID);
-
-    int width, height, nrComponents;
-    unsigned char *data = stbi_load(path, &width, &height, &nrComponents, 0);
-    if (data)
-    {
-        GLenum format;
-        if (nrComponents == 1)
-            format = GL_RED;
-        else if (nrComponents == 3)
-            format = GL_RGB;
-        else if (nrComponents == 4)
-            format = GL_RGBA;
-
-        glBindTexture(GL_TEXTURE_2D, textureID);
-        glTexImage2D(GL_TEXTURE_2D, 0, format, width, height, 0, format, GL_UNSIGNED_BYTE, data);
-        glGenerateMipmap(GL_TEXTURE_2D);
-
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-
-        stbi_image_free(data);
-    }
-    else
-    {
-        std::cout << "Texture failed to load at path: " << path << std::endl;
-        stbi_image_free(data);
-    }
-
-    return textureID;
 }
 
 unsigned int loadCubeMap(vector<std::string> faces)
