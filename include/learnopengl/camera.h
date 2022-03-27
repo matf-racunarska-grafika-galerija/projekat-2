@@ -84,8 +84,8 @@ public:
             Position -= WorldUp * velocity;
         if (direction == UP)
             Position += WorldUp * velocity;
-        //posle za fps kameru
-        //Position.y = 0.0f;
+        //efekat da hodamo po sceni
+        Position.y = 2.0f;
     }
 
     // processes input received from a mouse input system. Expects the offset value in both the x and y direction.

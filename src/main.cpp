@@ -266,15 +266,15 @@ int main() {
     // position attribute
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)0);
     glEnableVertexAttribArray(0);
-    // texture coord attribute
+    // normale coord attribute
     glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)(3 * sizeof(float)));
     glEnableVertexAttribArray(1);
-
+    //texture
     glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)(6 * sizeof(float)));
     glEnableVertexAttribArray(2);
 
     unsigned int diffuseMap = loadTexture(FileSystem::getPath("resources/textures/grass_diffuse.png").c_str());
-    unsigned int specularMap = loadTexture(FileSystem::getPath("resources/textures/grass_specular.png").c_str());    //treba crna slika
+    unsigned int specularMap = loadTexture(FileSystem::getPath("resources/textures/grass_specular.png").c_str());
 
     // skybox VAO
     unsigned int skyboxVAO, skyboxVBO;
@@ -427,24 +427,21 @@ int main() {
 
 
         //podloga
-        //objShader.setInt("material.texture_diffuse1", 0);
-        //objShader.setInt("material.texture_specular1", 1);
+        //mozda ispred while
+        objShader.setInt("material.texture_diffuse1", 0);
+        objShader.setInt("material.texture_specular1", 1);
 
         glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_2D, diffuseMap);
         glActiveTexture(GL_TEXTURE1);
         glBindTexture(GL_TEXTURE_2D, specularMap);
 
-        model = glm::mat4(1.0f); // make sure to initialize matrix to identity matrix first
-
-
+        model = glm::mat4(1.0f);
         objShader.setMat4("model", model);
-        objShader.setMat4("view", view);
-        // note: currently we set the projection matrix each frame, but since the projection matrix rarely changes it's often best practice to set it outside the main loop only once.
-        objShader.setMat4("projection", projection);
 
+        //za blinfonga treba shinnes 4* veci al trava ne sme da se presijava bas tako da tu treba obratiti paznju
+        //objShader.setFloat("material.shininess", 32.0f);
         glBindVertexArray(podlogaVAO);
-
         glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
 
 
