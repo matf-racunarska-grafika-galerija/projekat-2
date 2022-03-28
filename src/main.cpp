@@ -139,7 +139,9 @@ int main() {
         return -1;
     }
 
-    glEnable(GL_DEPTH_TEST);
+    //glEnable(GL_DEPTH_TEST);
+    glEnable(GL_BLEND);
+    //glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
     // tell stb_image.h to flip loaded textures on the y-axis (before loading model).
     stbi_set_flip_vertically_on_load(true);
@@ -166,6 +168,8 @@ int main() {
     Shader screenShader("resources/shaders/anti-aliasing.vs", "resources/shaders/anti-aliasing.fs");
     Shader skyboxShader("resources/shaders/skybox.vs", "resources/shaders/skybox.fs");
     screenShader.setInt("screenTexture", 0);
+    //dodat shader za travu
+    Shader discardShader("resources/shaders/discard_shader.vs", "resources/shaders/discard_shader.fs");
 
     // load models
     Model ourModel("resources/objects/backpack/backpack.obj");
@@ -192,6 +196,18 @@ int main() {
     pointLight.quadratic = 0.032f;
 
     //postavljamo vertexe
+    //za travu
+    float transparentVertices2[] = {
+            // positions                        // texture Coords
+            0.0f, -0.5f,  0.0f,  0.0f,  0.0f,
+            0.0f,  0.5f,  0.0f,  0.0f,  1.0f,
+            1.0f,  0.5f,  0.0f,  1.0f,  1.0f,
+
+            0.0f, -0.5f,  0.0f,  0.0f,  0.0f,
+            1.0f,  0.5f,  0.0f,  1.0f,  1.0f,
+            1.0f, -0.5f,  0.0f,  1.0f,  0.0f
+    };
+
     //podloga
 
     float podlogaVertices[] = {
@@ -252,6 +268,19 @@ int main() {
             1.0f, -1.0f,  1.0f
     };
 
+    // transparent VAO for grass
+    unsigned int transparentVAO2, transparentVBO2;
+    glGenVertexArrays(1, &transparentVAO2);
+    glGenBuffers(1, &transparentVBO2);
+    glBindVertexArray(transparentVAO2);
+    glBindBuffer(GL_ARRAY_BUFFER, transparentVBO2);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(transparentVertices2), transparentVertices2, GL_STATIC_DRAW);
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)nullptr);
+    glEnableVertexAttribArray(1);
+    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)(3 * sizeof(float)));
+    glBindVertexArray(0);
+
     //podloga VAO
     unsigned int podlogaVBO, podlogaVAO, podlogaEBO;
     glGenVertexArrays(1, &podlogaVAO);
@@ -276,8 +305,6 @@ int main() {
     glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)(6 * sizeof(float)));
     glEnableVertexAttribArray(2);
 
-    unsigned int diffuseMap = loadTexture(FileSystem::getPath("resources/textures/grass_diffuse.png").c_str());
-    unsigned int specularMap = loadTexture(FileSystem::getPath("resources/textures/grass_specular.png").c_str());
 
     // skybox VAO
     unsigned int skyboxVAO, skyboxVBO;
@@ -299,9 +326,23 @@ int main() {
                     FileSystem::getPath("resources/textures/skybox/left.png"),
                     FileSystem::getPath("resources/textures/skybox/right.png")
             };
+    vector<glm::vec3> vegetation
+            {
+                    glm::vec3(-1.5f, 0.5f, -0.48f),
+                    glm::vec3( 1.5f, 0.5f, 0.51f),
+                    glm::vec3( 0.0f, 0.5f, 0.7f),
+                    glm::vec3(-0.7f, 0.5f, -2.3f),
+                    glm::vec3 (1.0f, 0.5f, -1.2f),
+                    glm::vec3 (-0.1f, 0.5f, -0.63f),
+                    glm::vec3 (-1.75f, 0.5f, 1.0f),
+                    glm::vec3 (-0.6f, 0.5f, -2.0f)
+            };
 
     //texture loading
     // -------------------------
+    unsigned int diffuseMap = loadTexture(FileSystem::getPath("resources/textures/grass_diffuse.png").c_str());
+    unsigned int specularMap = loadTexture(FileSystem::getPath("resources/textures/grass_specular.png").c_str());
+    unsigned int transparentTexture = loadTexture(FileSystem::getPath("resources/textures/grass.png").c_str());
     unsigned int cubeMapTexture = loadCubeMap(faces);
 
     // --------------------------------------------- ANTI-ALIASING ------------------------------------------------------------
@@ -351,6 +392,14 @@ int main() {
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
     // ------------------------------------------------------------------------------------------------------------------------
 
+
+    //oke zar ne treba ovde da se setuje redni broj semplera??
+    objShader.use();
+    objShader.setInt("material.texture_diffuse1", 0);
+    objShader.setInt("material.texture_specular1", 1);
+    discardShader.use();
+    discardShader.setInt("texture1", 0);
+
     // render loop
     while (!glfwWindowShouldClose(window)) {
         // per-frame time logic
@@ -376,7 +425,6 @@ int main() {
         objShader.use();
         objShader.setVec3("viewPosition", programState->camera.Position);
         objShader.setFloat("material.shininess", 32.0f);
-        //skyboxShader.setBool("celShading", true);   //moram da proverim jos sta ovo radi zapravo
 
         // view/projection transformations
         glm::mat4 projection = glm::perspective(glm::radians(programState->camera.Zoom),
@@ -438,11 +486,24 @@ int main() {
             ulicnaSvetiljka.Draw(objShader);
         }
 
-        //podloga
-        //mozda ispred while
-        objShader.setInt("material.texture_diffuse1", 0);
-        objShader.setInt("material.texture_specular1", 1);
+        discardShader.use();
+        discardShader.setMat4("projection", projection);
+        discardShader.setMat4("view", view);
+        glBindVertexArray(transparentVAO2);
+        glBindTexture(GL_TEXTURE_2D, transparentTexture);
+        model = glm::mat4(1.0f);
+        for (unsigned int i = 0; i < vegetation.size(); i++)
+        {
+            model = glm::mat4(1.0f);
+            model = glm::translate(model, vegetation[i]);
+            //model = glm::rotate(model, (float)i*60.0f, glm::vec3(0.0, 0.1, 0.0));
+            discardShader.setMat4("model", model);
+            glDrawArrays(GL_TRIANGLES, 0, 6);
+        }
 
+
+        //podloga
+        objShader.use();
         glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_2D, diffuseMap);
         glActiveTexture(GL_TEXTURE1);
@@ -466,6 +527,8 @@ int main() {
         objShader.setMat4("model", model);
         x.Draw(objShader);
          */
+
+
 
         //object rendering end, start of skybox rendering
         skyboxShader.use();
@@ -519,6 +582,11 @@ int main() {
     ImGui_ImplOpenGL3_Shutdown();
     ImGui_ImplGlfw_Shutdown();
     ImGui::DestroyContext();
+
+    glDeleteVertexArrays(1, &skyboxVAO);
+    glDeleteBuffers(1, &skyboxVAO);
+    glDeleteVertexArrays(1, &transparentVAO2);
+    glDeleteBuffers(1, &transparentVAO2);
 
     // glfw: terminate, clearing all previously allocated GLFW resources.
     glfwTerminate();
@@ -696,7 +764,6 @@ glm::mat4 CalcFlashlightPosition() {
 
 unsigned int loadTexture(char const * path)
 {
-
     unsigned int textureID;
     glGenTextures(1, &textureID);
 
@@ -704,7 +771,7 @@ unsigned int loadTexture(char const * path)
     unsigned char *data = stbi_load(path, &width, &height, &nrComponents, 0);
     if (data)
     {
-        GLenum format;
+        GLenum format = GL_RED;
         if (nrComponents == 1)
             format = GL_RED;
         else if (nrComponents == 3)
@@ -716,8 +783,16 @@ unsigned int loadTexture(char const * path)
         glTexImage2D(GL_TEXTURE_2D, 0, format, width, height, 0, format, GL_UNSIGNED_BYTE, data);
         glGenerateMipmap(GL_TEXTURE_2D);
 
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+
+        if(nullptr != strstr(path, "grass.png")){
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+
+        }
+        else {
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+        }
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 
@@ -731,7 +806,6 @@ unsigned int loadTexture(char const * path)
 
     return textureID;
 }
-
 unsigned int loadCubeMap(vector<std::string> faces)
 {
     unsigned int textureID;
