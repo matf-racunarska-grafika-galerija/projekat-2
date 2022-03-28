@@ -349,11 +349,6 @@ int main() {
     unsigned int podlogaSpecularMap = TextureFromFile("grass_specular.png", "resources/textures");
 
     unsigned int transparentTexture = TextureFromFile("grass.png", "resources/textures/");
-    // za travu manuelno namestamo parametre, jer su po defaultu u funkciji namesteni na
-    // GL_LINEAR_MIPMAP_LINEAR, odnosno GL_LINEAR
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-
     unsigned int cubeMapTexture = loadCubeMap(faces);
 
 
