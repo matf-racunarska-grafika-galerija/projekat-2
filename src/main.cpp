@@ -174,10 +174,6 @@ int main() {
     Shader simpleDepthShader("resources/shaders/depthShader.vs", "resources/shaders/depthShader.fs", "resources/shaders/depthShader.gs");
     Shader skyboxShader("resources/shaders/skybox.vs", "resources/shaders/skybox.fs");
 
-    screenShader.setInt("screenTexture", 0);
-    //dodat shader za travu
-    Shader discardShader("resources/shaders/discard_shader.vs", "resources/shaders/discard_shader.fs");
-
     // load models
     Model ourModel("resources/objects/backpack/backpack.obj");
     ourModel.SetShaderTextureNamePrefix("material.");
@@ -205,14 +201,14 @@ int main() {
     //postavljamo vertexe
     //za travu
     float transparentVertices2[] = {
-            // positions                        // texture Coords
-            0.0f, -0.5f,  0.0f,  0.0f,  0.0f,
-            0.0f,  0.5f,  0.0f,  0.0f,  1.0f,
-            1.0f,  0.5f,  0.0f,  1.0f,  1.0f,
+            // positions                    // normals                        // texture Coords
+            0.0f, -0.5f,  0.0f, 0.0f, 0.0f, 1.0f,  0.0f,  0.0f,
+            0.0f,  0.5f, 0.0f, 0.0f, 0.0f, 1.0f,  0.0f,  1.0f,
+            1.0f,  0.5f,0.0f, 0.0f, 0.0f, 1.0f, 1.0f,  1.0f,
 
-            0.0f, -0.5f,  0.0f,  0.0f,  0.0f,
-            1.0f,  0.5f,  0.0f,  1.0f,  1.0f,
-            1.0f, -0.5f,  0.0f,  1.0f,  0.0f
+            0.0f, -0.5f,  0.0f, 0.0f, 0.0f, 1.0f,  0.0f,  0.0f,
+            1.0f,  0.5f,  0.0f, 0.0f, 0.0f, 1.0f,  1.0f,  1.0f,
+            1.0f, -0.5f,  0.0f, 0.0f, 0.0f, 1.0f,  1.0f,  0.0f
     };
 
     //podloga
@@ -283,9 +279,11 @@ int main() {
     glBindBuffer(GL_ARRAY_BUFFER, transparentVBO2);
     glBufferData(GL_ARRAY_BUFFER, sizeof(transparentVertices2), transparentVertices2, GL_STATIC_DRAW);
     glEnableVertexAttribArray(0);
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)nullptr);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)nullptr);
     glEnableVertexAttribArray(1);
-    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)(3 * sizeof(float)));
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)(3 * sizeof(float)));
+    glEnableVertexAttribArray(2);
+    glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)(6 * sizeof(float)));
     glBindVertexArray(0);
 
     //podloga VAO
@@ -346,13 +344,18 @@ int main() {
 
     //texture loading
     // -------------------------
-    unsigned int diffuseMap = TextureFromFile("grass_diffuse.png", "resources/textures/");
-    unsigned int specularMap = TextureFromFile("grass_specular.png", "resources/textures/");
-    unsigned int transparentTexture = TextureFromFile("grass.png", "resources/textures/");
-    unsigned int cubeMapTexture = loadCubeMap(faces);
     // uklonio sam loadTexture funkciju jer vec imamo njen ekvivalent u model.h fajlu
     unsigned int podlogaDiffuseMap = TextureFromFile("grass_diffuse.png", "resources/textures");
     unsigned int podlogaSpecularMap = TextureFromFile("grass_specular.png", "resources/textures");
+
+    unsigned int transparentTexture = TextureFromFile("grass.png", "resources/textures/");
+    // za travu manuelno namestamo parametre, jer su po defaultu u funkciji namesteni na
+    // GL_LINEAR_MIPMAP_LINEAR, odnosno GL_LINEAR
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+
+    unsigned int cubeMapTexture = loadCubeMap(faces);
+
 
     // --------------------------------------------- ANTI-ALIASING ------------------------------------------------------------
     // vertex attributes for a quad that fills the entire screen in Normalized Device Coordinates.
@@ -437,9 +440,6 @@ int main() {
     objShader.setInt("material.texture_specular1", 1);
     objShader.setInt("depthMap", 2);
 
-    //oke zar ne treba ovde da se setuje redni broj semplera??
-    discardShader.use();
-    discardShader.setInt("texture1", 0);
 
     // render loop
     while (!glfwWindowShouldClose(window)) {
@@ -606,10 +606,7 @@ int main() {
             ulicnaSvetiljkaModel.Draw(objShader);
         }
 
-        glDisable(GL_CULL_FACE);
-        discardShader.use();
-        discardShader.setMat4("projection", projection);
-        discardShader.setMat4("view", view);
+        glDisable(GL_CULL_FACE); // za uspravnu travu i za podlogu nam ne treba odsecanje strana
         glBindVertexArray(transparentVAO2);
         glBindTexture(GL_TEXTURE_2D, transparentTexture);
         model = glm::mat4(1.0f);
@@ -618,15 +615,15 @@ int main() {
             model = glm::mat4(1.0f);
             model = glm::translate(model, vegetation[i]);
             //model = glm::rotate(model, (float)i*60.0f, glm::vec3(0.0, 0.1, 0.0));
-            discardShader.setMat4("model", model);
+            objShader.setMat4("model", model);
+            objShader.setMat4("projection", projection);
+            objShader.setMat4("view", view);
             glDrawArrays(GL_TRIANGLES, 0, 6);
         }
 
 
         //podloga
 
-
-        objShader.use();
         glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_2D, podlogaDiffuseMap);
         glActiveTexture(GL_TEXTURE1);
@@ -642,17 +639,6 @@ int main() {
         glBindVertexArray(podlogaVAO);
         glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
         glEnable(GL_CULL_FACE);
-
-
-        /* kada ucitavas novi model koristis ovaj templejt
-        model = glm::mat4(1.0f);
-        model = glm::translate(model, glm::vec3(programState->tempPosition));
-        model = glm::scale(model, glm::vec3(programState->tempScale));
-        model = glm::rotate(model, glm::radians(programState->tempRotation), glm::vec3(0,1,0));
-        objShader.setMat4("model", model);
-        x.Draw(objShader);
-         */
-
 
 
         //object rendering end, start of skybox rendering
