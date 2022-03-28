@@ -7,7 +7,7 @@
 
 unsigned int loadCubeMap(vector<std::string> faces);
 
-unsigned int setupSkybox(unsigned int *cubeMapTexture)
+unsigned int setupSkybox(unsigned int &cubeMapTexture)
 {
     float skyboxVertices[] = {
             // positions
@@ -73,7 +73,7 @@ unsigned int setupSkybox(unsigned int *cubeMapTexture)
     glEnableVertexAttribArray(0);
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)nullptr);
 
-    *cubeMapTexture = loadCubeMap(faces);
+    cubeMapTexture = loadCubeMap(faces);
 
     return skyboxVAO;
 }
@@ -149,7 +149,7 @@ unsigned int setupTallGrass()
     return tallgrassVAO;
 }
 
-unsigned int setupAntiAliasing(unsigned int *framebuffer, unsigned int *textureColorBufferMultiSampled, const unsigned int SCR_WIDTH, const unsigned int SCR_HEIGHT)
+unsigned int setupAntiAliasing(unsigned int &framebuffer, unsigned int &textureColorBufferMultiSampled, const unsigned int SCR_WIDTH, const unsigned int SCR_HEIGHT)
 {
     float quadVertices[] = {
             // positions   // texCoords
@@ -173,14 +173,14 @@ unsigned int setupAntiAliasing(unsigned int *framebuffer, unsigned int *textureC
     glEnableVertexAttribArray(1);
     glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void*)(2 * sizeof(float)));
 
-    glGenFramebuffers(1, framebuffer);
-    glBindFramebuffer(GL_FRAMEBUFFER, *framebuffer);
+    glGenFramebuffers(1, &framebuffer);
+    glBindFramebuffer(GL_FRAMEBUFFER, framebuffer);
 
-    glGenTextures(1, textureColorBufferMultiSampled);
-    glBindTexture(GL_TEXTURE_2D_MULTISAMPLE, *textureColorBufferMultiSampled);
+    glGenTextures(1, &textureColorBufferMultiSampled);
+    glBindTexture(GL_TEXTURE_2D_MULTISAMPLE, textureColorBufferMultiSampled);
     glTexImage2DMultisample(GL_TEXTURE_2D_MULTISAMPLE, 4, GL_RGB, SCR_WIDTH, SCR_HEIGHT, GL_TRUE);
     glBindTexture(GL_TEXTURE_2D_MULTISAMPLE, 0);
-    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D_MULTISAMPLE, *textureColorBufferMultiSampled, 0);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D_MULTISAMPLE, textureColorBufferMultiSampled, 0);
 
     unsigned int rbo;
     glGenRenderbuffers(1, &rbo);
@@ -196,13 +196,13 @@ unsigned int setupAntiAliasing(unsigned int *framebuffer, unsigned int *textureC
     return quadVAO;
 }
 
-unsigned int setupDepthMap(unsigned int *depthCubeMap, const unsigned int SHADOW_WIDTH, const unsigned int SHADOW_HEIGHT)
+unsigned int setupDepthMap(unsigned int &depthCubeMap, const unsigned int SHADOW_WIDTH, const unsigned int SHADOW_HEIGHT)
 {
     unsigned int depthMapFBO;
     glGenFramebuffers(1, &depthMapFBO);
 
-    glGenTextures(1, depthCubeMap);
-    glBindTexture(GL_TEXTURE_CUBE_MAP, *depthCubeMap);
+    glGenTextures(1, &depthCubeMap);
+    glBindTexture(GL_TEXTURE_CUBE_MAP, depthCubeMap);
     for(int i = 0; i < 6; i++)
         glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, 0, GL_DEPTH_COMPONENT, SHADOW_WIDTH, SHADOW_HEIGHT, 0, GL_DEPTH_COMPONENT, GL_FLOAT, NULL);
 
@@ -213,7 +213,7 @@ unsigned int setupDepthMap(unsigned int *depthCubeMap, const unsigned int SHADOW
     glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_BORDER);
 
     glBindFramebuffer(GL_FRAMEBUFFER, depthMapFBO);
-    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, *depthCubeMap, 0);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, depthCubeMap, 0);
     // u ovaj framebuffer necemo da renderujemo boju, jer ce da cuva samo dubinu fragmenata
     glDrawBuffer(GL_NONE);
     glReadBuffer(GL_NONE);

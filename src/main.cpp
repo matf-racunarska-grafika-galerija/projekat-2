@@ -23,7 +23,6 @@ void mouse_callback(GLFWwindow *window, double xpos, double ypos);
 void scroll_callback(GLFWwindow *window, double xoffset, double yoffset);
 void key_callback(GLFWwindow *window, int key, int scancode, int action, int mods);
 void processInput(GLFWwindow *window);
-unsigned int loadCubeMap(vector<std::string> faces);
 
 // settings
 const unsigned int SCR_WIDTH = 1200;
@@ -177,7 +176,7 @@ int main() {
 
     // skybox
     unsigned int cubeMapTexture;
-    unsigned int skyboxVAO = setupSkybox(&cubeMapTexture);
+    unsigned int skyboxVAO = setupSkybox(cubeMapTexture);
 
     // uspravna trava
     unsigned int tallgrassVAO = setupTallGrass();
@@ -201,11 +200,11 @@ int main() {
     // depthMap
     const unsigned int SHADOW_WIDTH = 1024, SHADOW_HEIGHT = 1024;
     unsigned int depthCubeMap;
-    unsigned int depthMapFBO = setupDepthMap(&depthCubeMap, SHADOW_WIDTH, SHADOW_HEIGHT);
+    unsigned int depthMapFBO = setupDepthMap(depthCubeMap, SHADOW_WIDTH, SHADOW_HEIGHT);
 
     // ANTI-ALIASING
     unsigned int framebuffer, textureColorBufferMultiSampled;
-    unsigned int quadVAO = setupAntiAliasing(&framebuffer, &textureColorBufferMultiSampled, SCR_WIDTH, SCR_HEIGHT);
+    unsigned int quadVAO = setupAntiAliasing(framebuffer, textureColorBufferMultiSampled, SCR_WIDTH, SCR_HEIGHT);
 
     // konfiguracija shadera
     screenShader.use();
