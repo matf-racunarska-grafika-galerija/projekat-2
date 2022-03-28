@@ -208,13 +208,7 @@ int main() {
     // load textures
     unsigned int podlogaDiffuseMap = TextureFromFile("grass_diffuse.png", "resources/textures");
     unsigned int podlogaSpecularMap = TextureFromFile("grass_specular.png", "resources/textures");
-
     unsigned int tallgrassTexture = TextureFromFile("grass.png", "resources/textures/");
-    // za travu manuelno namestamo parametre, jer su po defaultu u funkciji namesteni na
-    // GL_LINEAR_MIPMAP_LINEAR, odnosno GL_LINEAR
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_CLAMP_TO_EDGE);
-
 
     // depthMap
     const unsigned int SHADOW_WIDTH = 1024, SHADOW_HEIGHT = 1024;
