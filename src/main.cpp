@@ -38,23 +38,12 @@ bool firstMouse = true;
 float deltaTime = 0.0f;
 float lastFrame = 0.0f;
 
-struct PointLight {
-    glm::vec3 position;
-    glm::vec3 ambient;
-    glm::vec3 diffuse;
-    glm::vec3 specular;
-
-    float constant;
-    float linear;
-    float quadratic;
-};
 struct ProgramState {
     glm::vec3 clearColor = glm::vec3(0);
     bool ImGuiEnabled = false;
     Camera camera;
     bool CameraMouseMovementUpdateEnabled = true;
     bool spotlight = true;
-    PointLight pointLight;
     float whiteAmbientLightStrength = 0.0f;
     bool grayscaleEnabled = false;
     bool AAEnabled = true;
@@ -63,7 +52,6 @@ struct ProgramState {
             : camera(glm::vec3(0.0f, 0.0f, 3.0f)) {}
 
     void SaveToFile(std::string filename);
-
     void LoadFromFile(std::string filename);
     glm::vec3 tempPosition=glm::vec3(0.0f, 2.0f, 0.0f);
     float tempScale=1.0f;
