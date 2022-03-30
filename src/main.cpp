@@ -46,14 +46,16 @@ struct ProgramState {
     float whiteAmbientLightStrength = 0.0f;
     bool grayscaleEnabled = false;
     bool AAEnabled = true;
-    bool deferredShadingEnabled = true;
+    bool introComplete = false;
+    bool enabledKeyboardInput = false;
+    bool enabledMouseInput = false;
 
     ProgramState()
-            : camera(glm::vec3(0.0f, 0.0f, 3.0f)) {}
+            : camera(glm::vec3((-0.8f, 1.0f, 120.0f))) {}
 
     void SaveToFile(std::string filename);
     void LoadFromFile(std::string filename);
-    glm::vec3 tempPosition=glm::vec3(0.0f, 2.0f, 0.0f);
+    glm::vec3 tempPosition=glm::vec3(0.0f, 2.0f, -7.0f);
     float tempScale=1.0f;
     float tempRotation=0.0f;
 };
@@ -70,6 +72,7 @@ void ProgramState::SaveToFile(std::string filename) {
         << camera.Front.z << '\n'
         << spotlight << '\n'
         << whiteAmbientLightStrength << '\n';
+        //<< introComplete;
 }
 void ProgramState::LoadFromFile(std::string filename) {
     std::ifstream in(filename);
@@ -85,6 +88,7 @@ void ProgramState::LoadFromFile(std::string filename) {
            >> camera.Front.z
            >> spotlight
            >> whiteAmbientLightStrength;
+          // >> introComplete;
     }
 }
 ProgramState *programState;
@@ -186,6 +190,13 @@ int main() {
     Model cottageHouseModel("resources/objects/cottage_house/cottage_blender.obj");
     cottageHouseModel.SetShaderTextureNamePrefix("material.");
     stbi_set_flip_vertically_on_load(true);
+
+    Model roadModel("resources/objects/road/road.obj");
+    roadModel.SetShaderTextureNamePrefix("material.");
+
+    Model roadStopModel("resources/objects/ograda/rust_fence.obj");
+    roadStopModel.SetShaderTextureNamePrefix("material.");
+
 
     //podloga
     unsigned int podlogaVAO = setupFloorPlane();
@@ -293,11 +304,19 @@ int main() {
     srand(13);
     for (unsigned int i = 0; i < NR_LIGHTS; i++)
     {
-        lightPositions.push_back(glm::vec3(-0.4f, 6.65f, i * 10.0f));
+        lightPositions.push_back(glm::vec3(-0.35f, 6.55f, i * 12.0f));
         float rColor = ((rand() % 100) / 200.0f) + 0.1; // between 0.1 and 1.0
         float gColor = ((rand() % 100) / 200.0f) + 0.1; // between 0.1 and 1.0
         float bColor = ((rand() % 100) / 200.0f) + 0.1; // between 0.1 and 1.0
         lightColors.push_back(glm::vec3(rColor, gColor, bColor));
+    }
+
+    if(programState->introComplete == false) {
+        programState->enabledKeyboardInput = false;
+        programState->enabledMouseInput = false;
+        programState->camera.Position = glm::vec3(-0.8f, 1.0f, 120.0f);
+        programState->camera.Front = glm::vec3(0.0f, 0.0f, -1.0f);
+        programState->camera.Up = glm::vec3(0.0f, 1.0f, 0.0f);
     }
 
 
@@ -316,7 +335,18 @@ int main() {
         glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-        if(programState->deferredShadingEnabled) {
+        if(programState->introComplete == false)
+        {
+            programState->camera.Position.z -= 5.0f * deltaTime;
+        }
+
+        if(programState->introComplete == false && programState->camera.Position.z < 0) {
+            programState->enabledKeyboardInput = true;
+            programState->enabledMouseInput = true;
+            programState->introComplete = true;
+        }
+
+        if(!programState->introComplete) {
             // 1. geometry pass: render scene's geometry/color data into gbuffer
             // -----------------------------------------------------------------
             glBindFramebuffer(GL_FRAMEBUFFER, gBuffer);
@@ -330,7 +360,7 @@ int main() {
             shaderGeometryPass.setMat4("view", view);
             for (unsigned int i = 0; i < 10; i++) {
                 model = glm::mat4(1.0f);
-                model = glm::translate(model, glm::vec3(-4.0f, 0.0f, i * 10.0f));
+                model = glm::translate(model, glm::vec3(-4.0f, 0.0f, i * 12.0f));
                 model = glm::scale(model, glm::vec3(0.5f));
                 shaderGeometryPass.setMat4("model", model);
                 ulicnaSvetiljkaModel.Draw(shaderGeometryPass);
@@ -345,8 +375,30 @@ int main() {
                 glBindTexture(GL_TEXTURE_2D, podlogaSpecularMap);
                 glActiveTexture(GL_TEXTURE2);
                 glBindVertexArray(podlogaVAO);
-                glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
+                glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);                
             glEnable(GL_CULL_FACE);
+
+            // renderovanje ulice
+            model = glm::mat4(1.0f);
+            model = glm::translate(model, glm::vec3(-0.2f, -1.0f, 11.0f));
+            model = glm::rotate(model, glm::radians(90.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+            shaderGeometryPass.setMat4("model", model);
+            roadModel.Draw(shaderGeometryPass);
+            model = glm::mat4(1.0f);
+            model = glm::translate(model, glm::vec3(-0.2f, -1.0f, 42.68f));
+            model = glm::rotate(model, glm::radians(90.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+            shaderGeometryPass.setMat4("model", model);
+            roadModel.Draw(shaderGeometryPass);
+            model = glm::mat4(1.0f);
+            model = glm::translate(model, glm::vec3(-0.2f, -1.0f, 74.36f));
+            model = glm::rotate(model, glm::radians(90.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+            shaderGeometryPass.setMat4("model", model);
+            roadModel.Draw(shaderGeometryPass);
+            model = glm::mat4(1.0f);
+            model = glm::translate(model, glm::vec3(-0.2f, -1.0f, 106.04f));
+            model = glm::rotate(model, glm::radians(90.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+            shaderGeometryPass.setMat4("model", model);
+            roadModel.Draw(shaderGeometryPass);
 
             glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
@@ -403,7 +455,7 @@ int main() {
             for (unsigned int i = 0; i < lightPositions.size(); i++) {
                 model = glm::mat4(1.0f);
                 model = glm::translate(model, lightPositions[i]);
-                model = glm::scale(model, glm::vec3(0.125f));
+                model = glm::scale(model, glm::vec3(0.35f, 0.1f, 0.30f));
                 shaderLightBox.setMat4("model", model);
                 shaderLightBox.setVec3("lightColor", lightColors[i]);
                 renderCube();
@@ -478,7 +530,7 @@ int main() {
 //
 //        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-        if(programState->deferredShadingEnabled == false) {
+        if(programState->introComplete) {
             // ANTI-ALIASING: preusmeravamo renderovanje na nas framebuffer da bismo imali MSAA
             // *************************************************************************************************************
             glBindFramebuffer(GL_FRAMEBUFFER, framebuffer);
@@ -543,11 +595,20 @@ int main() {
         objShader.setMat4("model", model);
         ourModel.Draw(objShader);
 
-        // renderovanje baterijske lampe:
-        model = CalcFlashlightPosition();
-        objShader.setMat4("model", model);
-        flashlightModel.Draw(objShader);
+        if(programState->introComplete) {
+            // renderovanje baterijske lampe:
+            model = CalcFlashlightPosition();
+            objShader.setMat4("model", model);
+            flashlightModel.Draw(objShader);
+        }
 
+        // renderovanje stop znaka:
+        model = glm::mat4(1.0f);
+        model = glm::translate(model, glm::vec3(-0.69f, 0.15f, -4.0f));
+        model = glm::rotate(model, glm::radians(90.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+        model = glm::scale(model, glm::vec3(0.25f));
+        objShader.setMat4("model", model);
+        roadStopModel.Draw(objShader);
 
         glDisable(GL_CULL_FACE);
         // renderovanje kuce:
@@ -564,6 +625,7 @@ int main() {
         objShader.setMat4("model", model);
         cottageHouseModel.Draw(objShader);
 
+
         glBindVertexArray(tallgrassVAO);
         glBindTexture(GL_TEXTURE_2D, tallgrassTexture);
         for (unsigned int i = 0; i < vegetation.size(); i++)
@@ -577,10 +639,32 @@ int main() {
             glDrawArrays(GL_TRIANGLES, 0, 6);
         }
 
-        if(programState->deferredShadingEnabled == false) {
+        if(programState->introComplete) {
+            // renderovanje ulice
+            model = glm::mat4(1.0f);
+            model = glm::translate(model, glm::vec3(-0.2f, -1.0f, 11.0f));
+            model = glm::rotate(model, glm::radians(90.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+            objShader.setMat4("model", model);
+            roadModel.Draw(objShader);
+            model = glm::mat4(1.0f);
+            model = glm::translate(model, glm::vec3(-0.2f, -1.0f, 42.68f));
+            model = glm::rotate(model, glm::radians(90.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+            objShader.setMat4("model", model);
+            roadModel.Draw(objShader);
+            model = glm::mat4(1.0f);
+            model = glm::translate(model, glm::vec3(-0.2f, -1.0f, 74.36f));
+            model = glm::rotate(model, glm::radians(90.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+            objShader.setMat4("model", model);
+            roadModel.Draw(objShader);
+            model = glm::mat4(1.0f);
+            model = glm::translate(model, glm::vec3(-0.2f, -1.0f, 106.04f));
+            model = glm::rotate(model, glm::radians(90.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+            objShader.setMat4("model", model);
+            roadModel.Draw(objShader);
+
             for (unsigned int i = 0; i < 10; i++) {
                 model = glm::mat4(1.0f);
-                model = glm::translate(model, glm::vec3(-4.0f, 0.0f, i * 10.0f));
+                model = glm::translate(model, glm::vec3(-4.0f, 0.0f, i * 12.0f));
                 model = glm::scale(model, glm::vec3(0.5f));
                 objShader.setMat4("model", model);
                 ulicnaSvetiljkaModel.Draw(objShader);
@@ -625,7 +709,7 @@ int main() {
         glDepthFunc(GL_LESS); // set depth function back to default
 
 
-        if(programState->deferredShadingEnabled == false) {
+        if(programState->introComplete) {
             // ANTI-ALIASING: ukljucivanje
             // *************************************************************************************************************
             glBindFramebuffer(GL_FRAMEBUFFER, 0);
@@ -646,7 +730,7 @@ int main() {
             // *************************************************************************************************************
         }
 
-        std::cerr << screenVAO << "\n";
+        std::cerr << "Intro " << (programState->introComplete ? "" : "in") << "complete\n";
 
         if (programState->ImGuiEnabled)
             DrawImGui(programState);
@@ -678,18 +762,20 @@ void processInput(GLFWwindow *window) {
     if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
         glfwSetWindowShouldClose(window, true);
 
-    if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
-        programState->camera.ProcessKeyboard(FORWARD, deltaTime);
-    if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS)
-        programState->camera.ProcessKeyboard(BACKWARD, deltaTime);
-    if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS)
-        programState->camera.ProcessKeyboard(LEFT, deltaTime);
-    if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS)
-        programState->camera.ProcessKeyboard(RIGHT, deltaTime);
-    if (glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS)
-        programState->camera.ProcessKeyboard(DOWN, deltaTime);
-    if (glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS)
-        programState->camera.ProcessKeyboard(UP, deltaTime);
+    if(programState->enabledKeyboardInput) {
+        if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
+            programState->camera.ProcessKeyboard(FORWARD, deltaTime);
+        if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS)
+            programState->camera.ProcessKeyboard(BACKWARD, deltaTime);
+        if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS)
+            programState->camera.ProcessKeyboard(LEFT, deltaTime);
+        if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS)
+            programState->camera.ProcessKeyboard(RIGHT, deltaTime);
+        if (glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS)
+            programState->camera.ProcessKeyboard(DOWN, deltaTime);
+        if (glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS)
+            programState->camera.ProcessKeyboard(UP, deltaTime);
+    }
 }
 
 // glfw: whenever the window size changed (by OS or user resize) this callback function executes
@@ -703,20 +789,22 @@ void framebuffer_size_callback(GLFWwindow *window, int width, int height) {
 // glfw: whenever the mouse moves, this callback is called
 // -------------------------------------------------------
 void mouse_callback(GLFWwindow *window, double xpos, double ypos) {
-    if (firstMouse) {
+    if(programState->enabledMouseInput) {
+        if (firstMouse) {
+            lastX = xpos;
+            lastY = ypos;
+            firstMouse = false;
+        }
+
+        float xoffset = xpos - lastX;
+        float yoffset = lastY - ypos; // reversed since y-coordinates go from bottom to top
+
         lastX = xpos;
         lastY = ypos;
-        firstMouse = false;
+
+        if (programState->CameraMouseMovementUpdateEnabled)
+            programState->camera.ProcessMouseMovement(xoffset, yoffset);
     }
-
-    float xoffset = xpos - lastX;
-    float yoffset = lastY - ypos; // reversed since y-coordinates go from bottom to top
-
-    lastX = xpos;
-    lastY = ypos;
-
-    if (programState->CameraMouseMovementUpdateEnabled)
-        programState->camera.ProcessMouseMovement(xoffset, yoffset);
 }
 
 // glfw: whenever the mouse scroll wheel scrolls, this callback is called
@@ -757,9 +845,6 @@ void key_callback(GLFWwindow *window, int key, int scancode, int action, int mod
 
     if (key == GLFW_KEY_F3 && action == GLFW_PRESS)
         programState->grayscaleEnabled = !programState->grayscaleEnabled;
-
-    if (key == GLFW_KEY_F4 && action == GLFW_PRESS)
-        programState->deferredShadingEnabled = !programState->deferredShadingEnabled;
 
 
     // reset the camera to default position
@@ -872,8 +957,6 @@ void renderQuad()
     glBindVertexArray(quadVAO);
     glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
     glBindVertexArray(0);
-
-    std::cerr << "quadVAO: " << quadVAO << endl;
 }
 
 unsigned int cubeVAO = 0;
