@@ -7,15 +7,25 @@ uniform sampler2D gPosition;
 uniform sampler2D gNormal;
 uniform sampler2D gAlbedoSpec;
 
-struct Light {
-    vec3 Position;
-    vec3 Color;
-    
-    float Linear;
-    float Quadratic;
+
+struct Spotlight {
+    vec3 position;
+    vec3 direction;
+    float cutOff;
+    float outerCutOff;
+
+    vec3 ambient;
+    vec3 diffuse;
+    vec3 specular;
+    vec3 color;
+
+    float constant;
+    float linear;
+    float quadratic;
 };
-const int NR_LIGHTS = 32;
-uniform Light lights[NR_LIGHTS];
+
+const int NR_LIGHTS = 10;
+uniform Spotlight lights[NR_LIGHTS];
 uniform vec3 viewPos;
 
 void main()
@@ -27,23 +37,31 @@ void main()
     float Specular = texture(gAlbedoSpec, TexCoords).a;
     
     // then calculate lighting as usual
-    vec3 lighting  = Diffuse * 0.1; // hard-coded ambient component
+    vec3 lighting  = Diffuse * lights[0].ambient;
     vec3 viewDir  = normalize(viewPos - FragPos);
     for(int i = 0; i < NR_LIGHTS; ++i)
     {
         // diffuse
-        vec3 lightDir = normalize(lights[i].Position - FragPos);
-        vec3 diffuse = max(dot(Normal, lightDir), 0.0) * Diffuse * lights[i].Color;
+        vec3 lightDir = normalize(lights[i].position - FragPos);
+        vec3 diffuse = max(dot(Normal, lightDir), 0.0) * Diffuse * lights[i].color;
         // specular
         vec3 halfwayDir = normalize(lightDir + viewDir);  
         float spec = pow(max(dot(Normal, halfwayDir), 0.0), 16.0);
-        vec3 specular = lights[i].Color * spec * Specular;
+        vec3 specular = lights[i].color * spec * Specular;
         // attenuation
-        float distance = length(lights[i].Position - FragPos);
-        float attenuation = 1.0 / (1.0 + lights[i].Linear * distance + lights[i].Quadratic * distance * distance);
+        float distance = length(lights[i].position - FragPos);
+        float attenuation = 1.0 / (lights[i].constant + lights[i].linear * distance + lights[i].quadratic * distance * distance);
+
         diffuse *= attenuation;
         specular *= attenuation;
-        lighting += diffuse + specular;        
+
+        float theta = dot(lightDir, normalize(-lights[i].direction));
+        float epsilon = (lights[i].cutOff - lights[i].outerCutOff);
+        float intensity = clamp((theta - lights[i].outerCutOff) / epsilon, 0.0, 1.0);
+        diffuse  *= intensity;
+        specular *= intensity;
+
+        lighting += diffuse + specular;
     }
     FragColor = vec4(lighting, 1.0);
 }

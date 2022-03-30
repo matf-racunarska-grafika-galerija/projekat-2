@@ -287,6 +287,7 @@ unsigned int setupDepthMap2(unsigned int &depth, unsigned int &depthCubeMap, con
 
     return depthMapFBO;
 }
+
 unsigned int loadCubeMap(vector<std::string> faces)
 {
     unsigned int textureID;
