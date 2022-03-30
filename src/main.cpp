@@ -46,7 +46,7 @@ struct ProgramState {
     float whiteAmbientLightStrength = 0.0f;
     bool grayscaleEnabled = false;
     bool AAEnabled = true;
-    bool deferredShadingEnabled = false;
+    bool deferredShadingEnabled = true;
 
     ProgramState()
             : camera(glm::vec3(0.0f, 0.0f, 3.0f)) {}
@@ -93,7 +93,6 @@ void DrawImGui(ProgramState *programState);
 
 glm::mat4 CalcFlashlightPosition();
 
-void renderLightShow();
 void renderQuad();
 void renderCube();
 
@@ -226,7 +225,7 @@ int main() {
 
     // ANTI-ALIASING
     unsigned int framebuffer, textureColorBufferMultiSampled;
-    unsigned int quadVAO = setupAntiAliasing(framebuffer, textureColorBufferMultiSampled, SCR_WIDTH, SCR_HEIGHT);
+    unsigned int screenVAO = setupAntiAliasing(framebuffer, textureColorBufferMultiSampled, SCR_WIDTH, SCR_HEIGHT);
 
     // konfiguracija shadera
     screenShader.use();
@@ -312,98 +311,104 @@ int main() {
         // input
         processInput(window);
 
+        glViewport(0, 0, SCR_WIDTH, SCR_HEIGHT);
+
         glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-        // 1. geometry pass: render scene's geometry/color data into gbuffer
-        // -----------------------------------------------------------------
-        glBindFramebuffer(GL_FRAMEBUFFER, gBuffer);
-        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-        glm::mat4 projection = glm::perspective(glm::radians(programState->camera.Zoom), (float)SCR_WIDTH / (float)SCR_HEIGHT, 0.1f, 100.0f);
-        glm::mat4 view = programState->camera.GetViewMatrix();
-        glm::mat4 model = glm::mat4(1.0f);
-        shaderGeometryPass.use();
-        shaderGeometryPass.setMat4("projection", projection);
-        shaderGeometryPass.setMat4("view", view);
-        for (unsigned int i = 0; i < 10; i++)
-        {
-            model = glm::mat4(1.0f);
-            model = glm::translate(model, glm::vec3(-4.0f, 0.0f, i * 10.0f));
-            model = glm::scale(model, glm::vec3(0.5f));
-            shaderGeometryPass.setMat4("model", model);
-            ulicnaSvetiljkaModel.Draw(shaderGeometryPass);
+        if(programState->deferredShadingEnabled) {
+            // 1. geometry pass: render scene's geometry/color data into gbuffer
+            // -----------------------------------------------------------------
+            glBindFramebuffer(GL_FRAMEBUFFER, gBuffer);
+            glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+            glm::mat4 projection = glm::perspective(glm::radians(programState->camera.Zoom),
+                                                    (float) SCR_WIDTH / (float) SCR_HEIGHT, 0.1f, 100.0f);
+            glm::mat4 view = programState->camera.GetViewMatrix();
+            glm::mat4 model = glm::mat4(1.0f);
+            shaderGeometryPass.use();
+            shaderGeometryPass.setMat4("projection", projection);
+            shaderGeometryPass.setMat4("view", view);
+            for (unsigned int i = 0; i < 10; i++) {
+                model = glm::mat4(1.0f);
+                model = glm::translate(model, glm::vec3(-4.0f, 0.0f, i * 10.0f));
+                model = glm::scale(model, glm::vec3(0.5f));
+                shaderGeometryPass.setMat4("model", model);
+                ulicnaSvetiljkaModel.Draw(shaderGeometryPass);
+            }
+            glDisable(GL_CULL_FACE);
+                // crtanje podloge
+                model = glm::mat4(1.0f);
+                shaderGeometryPass.setMat4("model", model);
+                glActiveTexture(GL_TEXTURE0);
+                glBindTexture(GL_TEXTURE_2D, podlogaDiffuseMap);
+                glActiveTexture(GL_TEXTURE1);
+                glBindTexture(GL_TEXTURE_2D, podlogaSpecularMap);
+                glActiveTexture(GL_TEXTURE2);
+                glBindVertexArray(podlogaVAO);
+                glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
+            glEnable(GL_CULL_FACE);
+
+            glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+            // 2. lighting pass: calculate lighting by iterating over a screen filled quad pixel-by-pixel using the gbuffer's content.
+            // -----------------------------------------------------------------------------------------------------------------------
+            glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+            shaderLightingPass.use();
+            glActiveTexture(GL_TEXTURE0);
+            glBindTexture(GL_TEXTURE_2D, gPosition);
+            glActiveTexture(GL_TEXTURE1);
+            glBindTexture(GL_TEXTURE_2D, gNormal);
+            glActiveTexture(GL_TEXTURE2);
+            glBindTexture(GL_TEXTURE_2D, gAlbedoSpec);
+            // send light relevant uniforms
+            for (unsigned int i = 0; i < lightPositions.size(); i++) {
+                shaderLightingPass.setVec3("lights[" + std::to_string(i) + "].position", lightPositions[i]);
+                shaderLightingPass.setVec3("lights[" + std::to_string(i) + "].direction", glm::vec3(0.0f, -1.0f, 0.0f));
+
+                shaderLightingPass.setVec3("lights[" + std::to_string(i) + "].color",
+                                           sin((float) glfwGetTime() * lightColors[i]) / 2.0f + 0.5f);
+                shaderLightingPass.setVec3("lights[" + std::to_string(i) + "].ambient", glm::vec3(0.01f));
+                shaderLightingPass.setVec3("lights[" + std::to_string(i) + "].diffuse", 1.0f, 1.0f, 1.0f);
+                shaderLightingPass.setVec3("lights[" + std::to_string(i) + "].specular", 1.0f, 1.0f, 1.0f);
+
+                shaderLightingPass.setFloat("lights[" + std::to_string(i) + "].constant", 1.0f);
+                shaderLightingPass.setFloat("lights[" + std::to_string(i) + "].linear", 0.06f);
+                shaderLightingPass.setFloat("lights[" + std::to_string(i) + "].quadratic", 0.032f);
+
+                shaderLightingPass.setFloat("lights[" + std::to_string(i) + "].cutOff",
+                                            glm::cos(glm::radians(15.0f + (sin((float)glfwGetTime()) / 2.0f + 0.5) * 3)));
+                shaderLightingPass.setFloat("lights[" + std::to_string(i) + "].outerCutOff",
+                                            glm::cos(glm::radians(25.0f + (cos((float)glfwGetTime()) / 2.0f + 0.5) * 5)));
+            }
+            shaderLightingPass.setVec3("viewPos", programState->camera.Position);
+            // finally render quad
+            renderQuad();
+
+            // 2.5. copy content of geometry's depth buffer to default framebuffer's depth buffer
+            // ----------------------------------------------------------------------------------
+            glBindFramebuffer(GL_READ_FRAMEBUFFER, gBuffer);
+            glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0); // write to default framebuffer
+            // blit to default framebuffer. Note that this may or may not work as the internal formats of both the FBO and default framebuffer have to match.
+            // the internal formats are implementation defined. This works on all of my systems, but if it doesn't on yours you'll likely have to write to the
+            // depth buffer in another shader stage (or somehow see to match the default framebuffer's internal format with the FBO's internal format).
+            glBlitFramebuffer(0, 0, SCR_WIDTH, SCR_HEIGHT, 0, 0, SCR_WIDTH, SCR_HEIGHT, GL_DEPTH_BUFFER_BIT,
+                              GL_NEAREST);
+            glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+            // 3. render lights on top of scene
+            // --------------------------------
+            shaderLightBox.use();
+            shaderLightBox.setMat4("projection", projection);
+            shaderLightBox.setMat4("view", view);
+            for (unsigned int i = 0; i < lightPositions.size(); i++) {
+                model = glm::mat4(1.0f);
+                model = glm::translate(model, lightPositions[i]);
+                model = glm::scale(model, glm::vec3(0.125f));
+                shaderLightBox.setMat4("model", model);
+                shaderLightBox.setVec3("lightColor", lightColors[i]);
+                renderCube();
+            }
         }
-        glDisable(GL_CULL_FACE);
-        model = glm::mat4(1.0f);
-        shaderGeometryPass.setMat4("model", model);
-        glActiveTexture(GL_TEXTURE0);
-        glBindTexture(GL_TEXTURE_2D, podlogaDiffuseMap);
-        glActiveTexture(GL_TEXTURE1);
-        glBindTexture(GL_TEXTURE_2D, podlogaSpecularMap);
-        glActiveTexture(GL_TEXTURE2);
-        glBindVertexArray(podlogaVAO);
-        glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
-        glEnable(GL_CULL_FACE);
-
-        glBindFramebuffer(GL_FRAMEBUFFER, 0);
-
-        // 2. lighting pass: calculate lighting by iterating over a screen filled quad pixel-by-pixel using the gbuffer's content.
-        // -----------------------------------------------------------------------------------------------------------------------
-        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-        shaderLightingPass.use();
-        glActiveTexture(GL_TEXTURE0);
-        glBindTexture(GL_TEXTURE_2D, gPosition);
-        glActiveTexture(GL_TEXTURE1);
-        glBindTexture(GL_TEXTURE_2D, gNormal);
-        glActiveTexture(GL_TEXTURE2);
-        glBindTexture(GL_TEXTURE_2D, gAlbedoSpec);
-        // send light relevant uniforms
-        for (unsigned int i = 0; i < lightPositions.size(); i++)
-        {
-            shaderLightingPass.setVec3("lights[" + std::to_string(i) + "].position", lightPositions[i]);
-            shaderLightingPass.setVec3("lights[" + std::to_string(i) + "].direction", glm::vec3(0.0f, -1.0f, 0.0f));
-
-            shaderLightingPass.setVec3("lights[" + std::to_string(i) + "].color", sin((float)glfwGetTime() * lightColors[i]) / 2.0f + 0.5f);
-            shaderLightingPass.setVec3("lights[" + std::to_string(i) + "].ambient", glm::vec3(0.01f));
-            shaderLightingPass.setVec3("lights[" + std::to_string(i) + "].diffuse", 1.0f, 1.0f, 1.0f);
-            shaderLightingPass.setVec3("lights[" + std::to_string(i) + "].specular", 1.0f, 1.0f, 1.0f);
-
-            shaderLightingPass.setFloat("lights[" + std::to_string(i) + "].constant", 1.0f);
-            shaderLightingPass.setFloat("lights[" + std::to_string(i) + "].linear", 0.06f);
-            shaderLightingPass.setFloat("lights[" + std::to_string(i) + "].quadratic", 0.032f);
-
-            shaderLightingPass.setFloat("lights[" + std::to_string(i) + "].cutOff", glm::cos(glm::radians(15.0f)));
-            shaderLightingPass.setFloat("lights[" + std::to_string(i) + "].outerCutOff", glm::cos(glm::radians(20.0f)));
-        }
-        shaderLightingPass.setVec3("viewPos", programState->camera.Position);
-        // finally render quad
-        renderQuad();
-
-        // 2.5. copy content of geometry's depth buffer to default framebuffer's depth buffer
-        // ----------------------------------------------------------------------------------
-        glBindFramebuffer(GL_READ_FRAMEBUFFER, gBuffer);
-        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0); // write to default framebuffer
-        // blit to default framebuffer. Note that this may or may not work as the internal formats of both the FBO and default framebuffer have to match.
-        // the internal formats are implementation defined. This works on all of my systems, but if it doesn't on yours you'll likely have to write to the
-        // depth buffer in another shader stage (or somehow see to match the default framebuffer's internal format with the FBO's internal format).
-        glBlitFramebuffer(0, 0, SCR_WIDTH, SCR_HEIGHT, 0, 0, SCR_WIDTH, SCR_HEIGHT, GL_DEPTH_BUFFER_BIT, GL_NEAREST);
-        glBindFramebuffer(GL_FRAMEBUFFER, 0);
-
-        // 3. render lights on top of scene
-        // --------------------------------
-        shaderLightBox.use();
-        shaderLightBox.setMat4("projection", projection);
-        shaderLightBox.setMat4("view", view);
-        for (unsigned int i = 0; i < lightPositions.size(); i++)
-        {
-            model = glm::mat4(1.0f);
-            model = glm::translate(model, lightPositions[i]);
-            model = glm::scale(model, glm::vec3(0.125f));
-            shaderLightBox.setMat4("model", model);
-            shaderLightBox.setVec3("lightColor", lightColors[i]);
-            renderCube();
-        }
-
 
 
 //        // renderovanje scene iz pozicije svetla
@@ -470,17 +475,18 @@ int main() {
 //
 //        // render
 //
-//        glViewport(0, 0, SCR_WIDTH, SCR_HEIGHT);
+//
 //        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-//        // ANTI-ALIASING: preusmeravamo renderovanje na nas framebuffer da bismo imali MSAA
-//        // *************************************************************************************************************
-//        glBindFramebuffer(GL_FRAMEBUFFER, framebuffer);
-//        glClearColor(programState->clearColor.r, programState->clearColor.g, programState->clearColor.b, 1.0f);
-//        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-//        glEnable(GL_DEPTH_TEST);
-//        // *************************************************************************************************************
-
+        if(programState->deferredShadingEnabled == false) {
+            // ANTI-ALIASING: preusmeravamo renderovanje na nas framebuffer da bismo imali MSAA
+            // *************************************************************************************************************
+            glBindFramebuffer(GL_FRAMEBUFFER, framebuffer);
+            glClearColor(programState->clearColor.r, programState->clearColor.g, programState->clearColor.b, 1.0f);
+            glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+            glEnable(GL_DEPTH_TEST);
+            // *************************************************************************************************************
+        }
 
         //object shader
         objShader.use();
@@ -488,9 +494,9 @@ int main() {
         objShader.setFloat("material.shininess", 32.0f);
 
         // view/projection transformations
-        projection = glm::perspective(glm::radians(programState->camera.Zoom),
+        glm::mat4 projection = glm::perspective(glm::radians(programState->camera.Zoom),
                                                 (float) SCR_WIDTH / (float) SCR_HEIGHT, 0.1f, 100.0f);
-        view = programState->camera.GetViewMatrix();
+        glm::mat4 view = programState->camera.GetViewMatrix();
         objShader.setMat4("projection", projection);
         objShader.setMat4("view", view);
 
@@ -501,13 +507,7 @@ int main() {
         objShader.setVec3("dirLight.diffuse", 0.05f, 0.05f, 0.05);
         objShader.setVec3("dirLight.specular", 0.2f, 0.2f, 0.2f);
 
-        //ovde treba pointlajtovi
-        //nasao sam kul nacin da obradjujemo vise pointlatova ako nam treba
 
-        // jedan pointlajt za testiranje senki
-//        lightPos.x = sin(glfwGetTime()) * 3.0f;
-//        lightPos.z = cos(glfwGetTime()) * 2.0f;
-//        lightPos.y = 5.0 + cos(glfwGetTime()) * 1.0f;
         objShader.setVec3("pointLight.position", lightPos);
         objShader.setVec3("pointLight.ambient", glm::vec3(1.0f));
         objShader.setVec3("pointLight.diffuse", 0.05f, 0.05f, 0.05);
@@ -548,14 +548,6 @@ int main() {
         objShader.setMat4("model", model);
         flashlightModel.Draw(objShader);
 
-//        for (unsigned int i = 0; i < 10; i++)
-//        {
-//            model = glm::mat4(1.0f);
-//            model = glm::translate(model, glm::vec3(-4.0f, 0.0f, i * 5.0f));
-//            model = glm::scale(model, glm::vec3(0.5f));
-//            objShader.setMat4("model", model);
-//            ulicnaSvetiljkaModel.Draw(objShader);
-//        }
 
         glDisable(GL_CULL_FACE);
         // renderovanje kuce:
@@ -585,21 +577,31 @@ int main() {
             glDrawArrays(GL_TRIANGLES, 0, 6);
         }
 
-        //podloga
-//        glActiveTexture(GL_TEXTURE0);
-//        glBindTexture(GL_TEXTURE_2D, podlogaDiffuseMap);
-//        glActiveTexture(GL_TEXTURE1);
-//        glBindTexture(GL_TEXTURE_2D, podlogaSpecularMap);
-//        glActiveTexture(GL_TEXTURE2);
-//        glBindTexture(GL_TEXTURE_CUBE_MAP, depthCubeMap);
-//
-//        model = glm::mat4(1.0f);
-//        objShader.setMat4("model", model);
-//
-//        //za blinfonga treba shinnes 4* veci al trava ne sme da se presijava bas tako da tu treba obratiti paznju
-//        //objShader.setFloat("material.shininess", 32.0f);
-//        glBindVertexArray(podlogaVAO);
-//        glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
+        if(programState->deferredShadingEnabled == false) {
+            for (unsigned int i = 0; i < 10; i++) {
+                model = glm::mat4(1.0f);
+                model = glm::translate(model, glm::vec3(-4.0f, 0.0f, i * 10.0f));
+                model = glm::scale(model, glm::vec3(0.5f));
+                objShader.setMat4("model", model);
+                ulicnaSvetiljkaModel.Draw(objShader);
+            }
+
+            //podloga
+            glActiveTexture(GL_TEXTURE0);
+            glBindTexture(GL_TEXTURE_2D, podlogaDiffuseMap);
+            glActiveTexture(GL_TEXTURE1);
+            glBindTexture(GL_TEXTURE_2D, podlogaSpecularMap);
+            glActiveTexture(GL_TEXTURE2);
+            glBindTexture(GL_TEXTURE_CUBE_MAP, depthCubeMap);
+
+            model = glm::mat4(1.0f);
+            objShader.setMat4("model", model);
+
+            //za blinfonga treba shinnes 4* veci al trava ne sme da se presijava bas tako da tu treba obratiti paznju
+            //objShader.setFloat("material.shininess", 32.0f);
+            glBindVertexArray(podlogaVAO);
+            glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
+        }
         glEnable(GL_CULL_FACE);
 
 
@@ -623,24 +625,28 @@ int main() {
         glDepthFunc(GL_LESS); // set depth function back to default
 
 
-//        // ANTI-ALIASING: ukljucivanje
-//        // *************************************************************************************************************
-//        glBindFramebuffer(GL_FRAMEBUFFER, 0);
-//        glClearColor(programState->clearColor.r, programState->clearColor.g, programState->clearColor.b, 1.0f);
-//        glClear(GL_COLOR_BUFFER_BIT);
-//        glDisable(GL_DEPTH_TEST);
-//
-//        screenShader.use();
-//
-//        screenShader.setFloat("SCR_WIDTH", SCR_WIDTH);
-//        screenShader.setFloat("SCR_HEIGHT", SCR_HEIGHT);
-//        screenShader.setBool("grayscaleEnabled", programState->grayscaleEnabled);
-//
-//        glBindVertexArray(quadVAO);
-//        glActiveTexture(GL_TEXTURE0);
-//        glBindTexture(GL_TEXTURE_2D_MULTISAMPLE, textureColorBufferMultiSampled);
-//        glDrawArrays(GL_TRIANGLES, 0, 6);
-//        // *************************************************************************************************************
+        if(programState->deferredShadingEnabled == false) {
+            // ANTI-ALIASING: ukljucivanje
+            // *************************************************************************************************************
+            glBindFramebuffer(GL_FRAMEBUFFER, 0);
+            glClearColor(programState->clearColor.r, programState->clearColor.g, programState->clearColor.b, 1.0f);
+            glClear(GL_COLOR_BUFFER_BIT);
+            glDisable(GL_DEPTH_TEST);
+
+            screenShader.use();
+
+            screenShader.setFloat("SCR_WIDTH", SCR_WIDTH);
+            screenShader.setFloat("SCR_HEIGHT", SCR_HEIGHT);
+            screenShader.setBool("grayscaleEnabled", programState->grayscaleEnabled);
+
+            glBindVertexArray(screenVAO);
+            glActiveTexture(GL_TEXTURE0);
+            glBindTexture(GL_TEXTURE_2D_MULTISAMPLE, textureColorBufferMultiSampled);
+            glDrawArrays(GL_TRIANGLES, 0, 6);
+            // *************************************************************************************************************
+        }
+
+        std::cerr << screenVAO << "\n";
 
         if (programState->ImGuiEnabled)
             DrawImGui(programState);
@@ -839,11 +845,6 @@ glm::mat4 CalcFlashlightPosition() {
     return model;
 }
 
-void renderLightShow()
-{
-
-}
-
 unsigned int quadVAO = 0;
 unsigned int quadVBO;
 void renderQuad()
@@ -871,6 +872,8 @@ void renderQuad()
     glBindVertexArray(quadVAO);
     glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
     glBindVertexArray(0);
+
+    std::cerr << "quadVAO: " << quadVAO << endl;
 }
 
 unsigned int cubeVAO = 0;
