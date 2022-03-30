@@ -21,8 +21,6 @@ void mouse_callback(GLFWwindow *window, double xpos, double ypos);
 void scroll_callback(GLFWwindow *window, double xoffset, double yoffset);
 void key_callback(GLFWwindow *window, int key, int scancode, int action, int mods);
 void processInput(GLFWwindow *window);
-unsigned int loadCubeMap(vector<std::string> faces);
-void renderQuad();
 
 // settings
 const unsigned int SCR_WIDTH = 1200;
@@ -40,34 +38,25 @@ bool firstMouse = true;
 float deltaTime = 0.0f;
 float lastFrame = 0.0f;
 
-struct PointLight {
-    glm::vec3 position;
-    glm::vec3 ambient;
-    glm::vec3 diffuse;
-    glm::vec3 specular;
-
-    float constant;
-    float linear;
-    float quadratic;
-};
 struct ProgramState {
     glm::vec3 clearColor = glm::vec3(0);
     bool ImGuiEnabled = false;
     Camera camera;
     bool CameraMouseMovementUpdateEnabled = true;
     bool spotlight = true;
-    PointLight pointLight;
     float whiteAmbientLightStrength = 0.0f;
     bool grayscaleEnabled = false;
     bool AAEnabled = true;
+    bool introComplete = false;
+    bool enabledKeyboardInput = false;
+    bool enabledMouseInput = false;
 
     ProgramState()
-            : camera(glm::vec3(0.0f, 0.0f, 3.0f)) {}
+            : camera(glm::vec3((-0.8f, 1.0f, 120.0f))) {}
 
     void SaveToFile(std::string filename);
-
     void LoadFromFile(std::string filename);
-    glm::vec3 tempPosition=glm::vec3(0.0f, 2.0f, 0.0f);
+    glm::vec3 tempPosition=glm::vec3(0.0f, 2.0f, -7.0f);
     float tempScale=1.0f;
     float tempRotation=0.0f;
 };
@@ -84,6 +73,7 @@ void ProgramState::SaveToFile(std::string filename) {
         << camera.Front.z << '\n'
         << spotlight << '\n'
         << whiteAmbientLightStrength << '\n';
+        //<< introComplete;
 }
 void ProgramState::LoadFromFile(std::string filename) {
     std::ifstream in(filename);
@@ -99,6 +89,7 @@ void ProgramState::LoadFromFile(std::string filename) {
            >> camera.Front.z
            >> spotlight
            >> whiteAmbientLightStrength;
+          // >> introComplete;
     }
 }
 ProgramState *programState;
@@ -107,6 +98,9 @@ void DrawImGui(ProgramState *programState);
 
 glm::mat4 CalcFlashlightPosition();
 
+unsigned int loadCubeMap(vector<std::string> faces);
+void renderQuad();
+void renderCube();
 
 int main() {
     // glfw: initialize and configure
@@ -128,14 +122,14 @@ int main() {
         return -1;
     }
     glfwMakeContextCurrent(window);
+    glfwSetWindowAspectRatio(window, 4, 3); // dozvoljava da prozor menja velicinu, ali cuva 4:3 odnos
 
-    // dozvoljava da prozor menja velicinu, ali cuva 4:3 odnos
-    glfwSetWindowAspectRatio(window, 4, 3);
-
+    // glfw callbacks setup
     glfwSetFramebufferSizeCallback(window, framebuffer_size_callback);
     glfwSetCursorPosCallback(window, mouse_callback);
     glfwSetScrollCallback(window, scroll_callback);
     glfwSetKeyCallback(window, key_callback);
+
     // tell GLFW to capture our mouse
     glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
 
@@ -145,14 +139,11 @@ int main() {
         return -1;
     }
 
-    //glEnable(GL_DEPTH_TEST);
     glEnable(GL_BLEND);
     //glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-
     glEnable(GL_DEPTH_TEST);
     glEnable(GL_CULL_FACE);
-    glCullFace(GL_BACK);
-
+    glCullFace(GL_BACK); // odsecamo zadje strane objekata
 
     // tell stb_image.h to flip loaded textures on the y-axis (before loading model).
     stbi_set_flip_vertically_on_load(true);
@@ -168,23 +159,25 @@ int main() {
     ImGui::CreateContext();
     ImGuiIO &io = ImGui::GetIO();
     (void) io;
-
     ImGui_ImplGlfw_InitForOpenGL(window, true);
     ImGui_ImplOpenGL3_Init("#version 330 core");
 
     // build and compile shaders
-    Shader objShader("resources/shaders/2.model_lighting.vs", "resources/shaders/2.model_lighting.fs");
-    Shader screenShader("resources/shaders/anti-aliasing.vs", "resources/shaders/anti-aliasing.fs");
-    Shader simpleDepthShader("resources/shaders/depthShader.vs", "resources/shaders/depthShader.fs", "resources/shaders/depthShader.gs");
+    Shader objShader("resources/shaders/objectShader.vs", "resources/shaders/objectShader.fs");
+    Shader screenShader("resources/shaders/anti-aliasing.vs", "resources/shaders/anti-aliasing.fs");    // za ANTI-ALIASING
     Shader skyboxShader("resources/shaders/skybox.vs", "resources/shaders/skybox.fs");
     Shader hdrShader("resources/shaders/hdr.vs", "resources/shaders/hdr.fs");
+
+    Shader shaderGeometryPass("resources/shaders/gBuffer.vs", "resources/shaders/gBuffer.fs");
+    Shader shaderLightingPass("resources/shaders/deferredShadingLightingPassShader.vs", "resources/shaders/deferredShadingLigthingPassShader.fs");
+    Shader shaderLightBox("resources/shaders/deferredLightShow.vs", "resources/shaders/deferredLightShow.fs");
+    
 
     // load models
     Model ourModel("resources/objects/backpack/backpack.obj");
     ourModel.SetShaderTextureNamePrefix("material.");
-
     Model ulicnaSvetiljkaModel("resources/objects/Street Lamp2/StreetLamp.obj");
-    ulicnaSvetiljkaModel.SetShaderTextureNamePrefix("material.");
+    //ulicnaSvetiljkaModel.SetShaderTextureNamePrefix("material.");
 
     // iz nekog razloga mora da se obrne tekstura
     stbi_set_flip_vertically_on_load(false);
@@ -192,34 +185,28 @@ int main() {
     flashlightModel.SetShaderTextureNamePrefix("material.");
     stbi_set_flip_vertically_on_load(true);
 
+    Model houseModel("resources/objects/House/House.obj");
+    houseModel.SetShaderTextureNamePrefix("material.");
 
-    PointLight& pointLight = programState->pointLight;
-    pointLight.position = glm::vec3(4.0f, 4.0, 0.0);
-    pointLight.ambient = glm::vec3(0.1, 0.1, 0.1);
-    pointLight.diffuse = glm::vec3(0.6, 0.6, 0.6);
-    pointLight.specular = glm::vec3(1.0, 1.0, 1.0);
+    stbi_set_flip_vertically_on_load(false);
+    Model cottageHouseModel("resources/objects/cottage_house/cottage_blender.obj");
+    cottageHouseModel.SetShaderTextureNamePrefix("material.");
+    stbi_set_flip_vertically_on_load(true);
 
-    pointLight.constant = 1.0f;
-    pointLight.linear = 0.09f;
-    pointLight.quadratic = 0.032f;
+    Model roadModel("resources/objects/road/road.obj");
+    roadModel.SetShaderTextureNamePrefix("material.");
 
-    //postavljamo vertexe
-    //za travu
-    float transparentVertices2[] = {
-            // positions                    // normals                        // texture Coords
-            0.0f, -0.5f,  0.0f, 0.0f, 0.0f, 1.0f,  0.0f,  0.0f,
-            0.0f,  0.5f, 0.0f, 0.0f, 0.0f, 1.0f,  0.0f,  1.0f,
-            1.0f,  0.5f,0.0f, 0.0f, 0.0f, 1.0f, 1.0f,  1.0f,
+    Model roadStopModel("resources/objects/ograda/rust_fence.obj");
+    roadStopModel.SetShaderTextureNamePrefix("material.");
 
-            0.0f, -0.5f,  0.0f, 0.0f, 0.0f, 1.0f,  0.0f,  0.0f,
-            1.0f,  0.5f,  0.0f, 0.0f, 0.0f, 1.0f,  1.0f,  1.0f,
-            1.0f, -0.5f,  0.0f, 0.0f, 0.0f, 1.0f,  1.0f,  0.0f
-    };
+    stbi_set_flip_vertically_on_load(false);
+    Model carModel("resources/objects/car/LowPolyCars.obj");
+    carModel.SetShaderTextureNamePrefix("material.");
+    stbi_set_flip_vertically_on_load(true);
 
     //podloga
-
     float podlogaVertices[] = {
-            // positions          // texture coords
+            // positions                           // normals                     // texture coords
             200.0f,  0.0f, -200.0f, 0.0f, 1.0f, 0.0f,   200.0f, 200.0f, // top right
             200.0f, 0.0f, 200.0f, 0.0f, 1.0f, 0.0f,  200.0f, 0.0f, // bottom right
             -200.0f, 0.0f, 200.0f,  0.0f, 1.0f, 0.0f, 0.0f, 0.0f, // bottom left
@@ -230,7 +217,30 @@ int main() {
             1, 2, 3  // second triangle
     };
 
-    //skybox
+    unsigned int podlogaVBO, podlogaVAO, podlogaEBO;
+    glGenVertexArrays(1, &podlogaVAO);
+    glGenBuffers(1, &podlogaVBO);
+    glGenBuffers(1, &podlogaEBO);
+
+    glBindVertexArray(podlogaVAO);
+
+    glBindBuffer(GL_ARRAY_BUFFER, podlogaVBO);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(podlogaVertices), podlogaVertices, GL_STATIC_DRAW);
+
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, podlogaEBO);
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(podlogaIndices), podlogaIndices, GL_STATIC_DRAW);
+
+    // position attribute
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)0);
+    glEnableVertexAttribArray(0);
+    // normale coord attribute
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)(3 * sizeof(float)));
+    glEnableVertexAttribArray(1);
+    //texture
+    glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)(6 * sizeof(float)));
+    glEnableVertexAttribArray(2);
+
+    // skybox
     float skyboxVertices[] = {
             // positions
             -1.0f,  1.0f, -1.0f,
@@ -276,56 +286,6 @@ int main() {
             1.0f, -1.0f,  1.0f
     };
 
-    // transparent VAO for grass
-    unsigned int transparentVAO2, transparentVBO2;
-    glGenVertexArrays(1, &transparentVAO2);
-    glGenBuffers(1, &transparentVBO2);
-    glBindVertexArray(transparentVAO2);
-    glBindBuffer(GL_ARRAY_BUFFER, transparentVBO2);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(transparentVertices2), transparentVertices2, GL_STATIC_DRAW);
-    glEnableVertexAttribArray(0);
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)nullptr);
-    glEnableVertexAttribArray(1);
-    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)(3 * sizeof(float)));
-    glEnableVertexAttribArray(2);
-    glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)(6 * sizeof(float)));
-    glBindVertexArray(0);
-
-    //podloga VAO
-    unsigned int podlogaVBO, podlogaVAO, podlogaEBO;
-    glGenVertexArrays(1, &podlogaVAO);
-    glGenBuffers(1, &podlogaVBO);
-    glGenBuffers(1, &podlogaEBO);
-
-    glBindVertexArray(podlogaVAO);
-
-    glBindBuffer(GL_ARRAY_BUFFER, podlogaVBO);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(podlogaVertices), podlogaVertices, GL_STATIC_DRAW);
-
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, podlogaEBO);
-    glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(podlogaIndices), podlogaIndices, GL_STATIC_DRAW);
-
-    // position attribute
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)0);
-    glEnableVertexAttribArray(0);
-    // normale coord attribute
-    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)(3 * sizeof(float)));
-    glEnableVertexAttribArray(1);
-    //texture
-    glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)(6 * sizeof(float)));
-    glEnableVertexAttribArray(2);
-
-    // skybox VAO
-    unsigned int skyboxVAO, skyboxVBO;
-    glGenVertexArrays(1, &skyboxVAO);
-    glGenBuffers(1, &skyboxVBO);
-    glBindVertexArray(skyboxVAO);
-    glBindBuffer(GL_ARRAY_BUFFER, skyboxVBO);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(skyboxVertices), &skyboxVertices, GL_STATIC_DRAW);
-    glEnableVertexAttribArray(0);
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)nullptr);
-
-    //load textures
     vector<std::string> faces
             {
                     FileSystem::getPath("resources/textures/skybox/front.png"),
@@ -335,32 +295,68 @@ int main() {
                     FileSystem::getPath("resources/textures/skybox/left.png"),
                     FileSystem::getPath("resources/textures/skybox/right.png")
             };
-    vector<glm::vec3> vegetation
-            {
-                    glm::vec3(-1.5f, 0.5f, -0.48f),
-                    glm::vec3( 1.5f, 0.5f, 0.51f),
-                    glm::vec3( 0.0f, 0.5f, 0.7f),
-                    glm::vec3(-0.7f, 0.5f, -2.3f),
-                    glm::vec3 (1.0f, 0.5f, -1.2f),
-                    glm::vec3 (-0.1f, 0.5f, -0.63f),
-                    glm::vec3 (-1.75f, 0.5f, 1.0f),
-                    glm::vec3 (-0.6f, 0.5f, -2.0f)
-            };
 
-    //texture loading
-    // -------------------------
-    // uklonio sam loadTexture funkciju jer vec imamo njen ekvivalent u model.h fajlu
+    unsigned int skyboxVAO, skyboxVBO;
+    glGenVertexArrays(1, &skyboxVAO);
+    glGenBuffers(1, &skyboxVBO);
+    glBindVertexArray(skyboxVAO);
+    glBindBuffer(GL_ARRAY_BUFFER, skyboxVBO);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(skyboxVertices), &skyboxVertices, GL_STATIC_DRAW);
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)nullptr);
+
+    unsigned int cubeMapTexture;
+    cubeMapTexture = loadCubeMap(faces);
+
+    // uspravna trava
+    float tallgrassVertices[] = {
+            // positions                    // normals                        // texture Coords
+            0.0f, -0.5f,  0.0f, 0.0f, 0.0f, 1.0f,  0.0f,  0.0f,
+            0.0f,  0.5f, 0.0f, 0.0f, 0.0f, 1.0f,  0.0f,  1.0f,
+            1.0f,  0.5f,0.0f, 0.0f, 0.0f, 1.0f, 1.0f,  1.0f,
+
+            0.0f, -0.5f,  0.0f, 0.0f, 0.0f, 1.0f,  0.0f,  0.0f,
+            1.0f,  0.5f,  0.0f, 0.0f, 0.0f, 1.0f,  1.0f,  1.0f,
+            1.0f, -0.5f,  0.0f, 0.0f, 0.0f, 1.0f,  1.0f,  0.0f
+    };
+
+    // tallgrass VAO for grass
+    unsigned int tallgrassVAO, tallgrassVBO;
+    glGenVertexArrays(1, &tallgrassVAO);
+    glGenBuffers(1, &tallgrassVBO);
+    glBindVertexArray(tallgrassVAO);
+    glBindBuffer(GL_ARRAY_BUFFER, tallgrassVBO);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(tallgrassVertices), tallgrassVertices, GL_STATIC_DRAW);
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)nullptr);
+    glEnableVertexAttribArray(1);
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)(3 * sizeof(float)));
+    glEnableVertexAttribArray(2);
+    glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)(6 * sizeof(float)));
+    glBindVertexArray(0);
+    vector<glm::vec3> vegetation
+        {
+            glm::vec3(-1.5f, 0.5f, -0.48f),
+            glm::vec3( 1.5f, 0.5f, 0.51f),
+            glm::vec3( 0.0f, 0.5f, 0.7f),
+            glm::vec3(-0.7f, 0.5f, -2.3f),
+            glm::vec3 (1.0f, 0.5f, -1.2f),
+            glm::vec3 (-0.1f, 0.5f, -0.63f),
+            glm::vec3 (-1.75f, 0.5f, 1.0f),
+            glm::vec3 (-0.6f, 0.5f, -2.0f)
+        };
+
+    // load textures
     unsigned int podlogaDiffuseMap = TextureFromFile("grass_diffuse.png", "resources/textures");
     unsigned int podlogaSpecularMap = TextureFromFile("grass_specular.png", "resources/textures");
+    unsigned int tallgrassTexture = TextureFromFile("grass.png", "resources/textures/");
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 
-    unsigned int transparentTexture = TextureFromFile("grass.png", "resources/textures/");
-    unsigned int cubeMapTexture = loadCubeMap(faces);
 
-
-    // --------------------------------------------- ANTI-ALIASING ------------------------------------------------------------
-    // vertex attributes for a quad that fills the entire screen in Normalized Device Coordinates.
+    // ANTI-ALIASING
     float quadVertices[] = {
-            // positions   // texCoords
+            // positions            // texCoords
             -1.0f,  1.0f,  0.0f, 1.0f,
             -1.0f, -1.0f,  0.0f, 0.0f,
             1.0f, -1.0f,  1.0f, 0.0f,
@@ -371,6 +367,7 @@ int main() {
     };
 
     unsigned int quadVAO, quadVBO;
+
     glGenVertexArrays(1, &quadVAO);
     glGenBuffers(1, &quadVBO);
     glBindVertexArray(quadVAO);
@@ -400,8 +397,9 @@ int main() {
     glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_RENDERBUFFER, rbo);
 
     if(glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
-        std::cerr << "ERROR::FRAMEBUFFER Framebuffer is not complete!\n";
+        std::cerr << "setupAntiAliasing::ERROR::FRAMEBUFFER Framebuffer is not complete!\n";
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
+  
     // ------------------------------------------------------------------------------------------------------------------------
     //HDR
     unsigned int hdrFBO;
@@ -427,31 +425,47 @@ int main() {
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
     //---------------------------------------------
 
-    // za pointlajt
-    glm::vec3 lightPos(-5.0f, 4.0f, -5.0f);
+    // configure g-buffer framebuffer
+    unsigned int gBuffer;
+    glGenFramebuffers(1, &gBuffer);
+    glBindFramebuffer(GL_FRAMEBUFFER, gBuffer);
 
-    const unsigned int SHADOW_WIDTH = 1024, SHADOW_HEIGHT = 1024;
-
-    unsigned int depthMapFBO;
-    glGenFramebuffers(1, &depthMapFBO);
-    unsigned int depthCubeMap;
-    glGenTextures(1, &depthCubeMap);
-    glBindTexture(GL_TEXTURE_CUBE_MAP, depthCubeMap);
-    for(int i = 0; i < 6; i++)
-        glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, 0, GL_DEPTH_COMPONENT, SHADOW_WIDTH, SHADOW_HEIGHT, 0, GL_DEPTH_COMPONENT, GL_FLOAT, NULL);
-
-    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
-    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
-    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_BORDER);
-
-    glBindFramebuffer(GL_FRAMEBUFFER, depthMapFBO);
-    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, depthCubeMap, 0);
-    // u ovaj framebuffer necemo da renderujemo boju, jer ce da cuva samo dubinu fragmenata
-    glDrawBuffer(GL_NONE);
-    glReadBuffer(GL_NONE);
+    unsigned int gPosition, gNormal, gAlbedoSpec;
+    // position color buffer
+    glGenTextures(1, &gPosition);
+    glBindTexture(GL_TEXTURE_2D, gPosition);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F, SCR_WIDTH, SCR_HEIGHT, 0, GL_RGBA, GL_FLOAT, NULL);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, gPosition, 0);
+    // normal color buffer
+    glGenTextures(1, &gNormal);
+    glBindTexture(GL_TEXTURE_2D, gNormal);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F, SCR_WIDTH, SCR_HEIGHT, 0, GL_RGBA, GL_FLOAT, NULL);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT1, GL_TEXTURE_2D, gNormal, 0);
+    // color + specular color buffer
+    glGenTextures(1, &gAlbedoSpec);
+    glBindTexture(GL_TEXTURE_2D, gAlbedoSpec);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, SCR_WIDTH, SCR_HEIGHT, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT2, GL_TEXTURE_2D, gAlbedoSpec, 0);
+    // tell OpenGL which color attachments we'll use (of this framebuffer) for rendering
+    unsigned int attachments[3] = { GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1, GL_COLOR_ATTACHMENT2 };
+    glDrawBuffers(3, attachments);
+    // create and attach depth buffer (renderbuffer)
+    unsigned int rboDepth;
+    glGenRenderbuffers(1, &rboDepth);
+    glBindRenderbuffer(GL_RENDERBUFFER, rboDepth);
+    glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT, SCR_WIDTH, SCR_HEIGHT);
+    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, rboDepth);
+    // finally check if framebuffer is complete
+    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
+        std::cout << "Framebuffer not complete!" << std::endl;
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    
 
     // konfiguracija shadera
     screenShader.use();
@@ -460,11 +474,40 @@ int main() {
     objShader.use();
     objShader.setInt("material.texture_diffuse1", 0);
     objShader.setInt("material.texture_specular1", 1);
-    objShader.setInt("depthMap", 2);
 
     hdrShader.use();
     hdrShader.setInt("hdrBuffer", 0);
 
+    shaderLightingPass.use();
+    shaderLightingPass.setInt("gPosition", 0);
+    shaderLightingPass.setInt("gNormal", 1);
+    shaderLightingPass.setInt("gAlbedoSpec", 2);
+
+    // ostale konfiguracije i inicijalizacije
+    glm::vec3 lightPos(-5.0f, 4.0f, -5.0f); // pozicija point lighta
+    glm::mat4 model = glm::mat4(1.0f);
+
+    // svetla na banderama
+    const unsigned int NR_LIGHTS = 10;
+    std::vector<glm::vec3> lightPositions;
+    std::vector<glm::vec3> lightColors;
+    srand(13);
+    for (unsigned int i = 0; i < NR_LIGHTS; i++)
+    {
+        lightPositions.push_back(glm::vec3(-0.35f, 6.55f, i * 12.0f));
+        float rColor = ((rand() % 100) / 200.0f) + 0.1; // between 0.1 and 1.0
+        float gColor = ((rand() % 100) / 200.0f) + 0.1; // between 0.1 and 1.0
+        float bColor = ((rand() % 100) / 200.0f) + 0.1; // between 0.1 and 1.0
+        lightColors.push_back(glm::vec3(rColor, gColor, bColor));
+    }
+
+    if(programState->introComplete == false) {
+        programState->enabledKeyboardInput = false;
+        programState->enabledMouseInput = false;
+        programState->camera.Position = glm::vec3(-0.8f, 1.0f, 120.0f);
+        programState->camera.Front = glm::vec3(0.0f, 0.0f, -1.0f);
+        programState->camera.Up = glm::vec3(0.0f, 1.0f, 0.0f);
+    }
 
     // render loop
     while (!glfwWindowShouldClose(window)) {
@@ -476,84 +519,153 @@ int main() {
         // input
         processInput(window);
 
-        glm::mat4 model = glm::mat4(1.0f);
-
-        // renderovanje scene iz pozicije svetla
-        // -------------------------------------------
-        glBindFramebuffer(GL_FRAMEBUFFER, framebuffer);
-        glClearColor(programState->clearColor.r, programState->clearColor.g, programState->clearColor.b, 1.0f);
-
-        float near_plane = 1.0f;
-        float far_plane  = 25.0f;
-        glm::mat4 shadowProj = glm::perspective(glm::radians(90.0f), (float)SHADOW_WIDTH / (float)SHADOW_HEIGHT, near_plane, far_plane);
-        std::vector<glm::mat4> shadowTransforms;
-        shadowTransforms.push_back(shadowProj * glm::lookAt(lightPos, lightPos + glm::vec3( 1.0f,  0.0f,  0.0f), glm::vec3(0.0f, -1.0f,  0.0f)));
-        shadowTransforms.push_back(shadowProj * glm::lookAt(lightPos, lightPos + glm::vec3(-1.0f,  0.0f,  0.0f), glm::vec3(0.0f, -1.0f,  0.0f)));
-        shadowTransforms.push_back(shadowProj * glm::lookAt(lightPos, lightPos + glm::vec3( 0.0f,  1.0f,  0.0f), glm::vec3(0.0f,  0.0f,  1.0f)));
-        shadowTransforms.push_back(shadowProj * glm::lookAt(lightPos, lightPos + glm::vec3( 0.0f, -1.0f,  0.0f), glm::vec3(0.0f,  0.0f, -1.0f)));
-        shadowTransforms.push_back(shadowProj * glm::lookAt(lightPos, lightPos + glm::vec3( 0.0f,  0.0f,  1.0f), glm::vec3(0.0f, -1.0f,  0.0f)));
-        shadowTransforms.push_back(shadowProj * glm::lookAt(lightPos, lightPos + glm::vec3( 0.0f,  0.0f, -1.0f), glm::vec3(0.0f, -1.0f,  0.0f)));
-
-        glViewport(0, 0, SHADOW_WIDTH, SHADOW_HEIGHT);
-        glBindFramebuffer(GL_FRAMEBUFFER, depthMapFBO);
-            glClear(GL_DEPTH_BUFFER_BIT);
-
-            simpleDepthShader.use();
-            for(unsigned int i = 0; i < 6; i++)
-                simpleDepthShader.setMat4("shadowMatrices[" + std::to_string((i)) +"]", shadowTransforms[i]);
-            simpleDepthShader.setFloat("far_plane", far_plane);
-            simpleDepthShader.setVec3("lightPos", lightPos);
-
-            // renderovanje ranca:
-            model = glm::mat4(1.0f);
-            model = glm::translate(model,programState->tempPosition);
-            model = glm::scale(model, glm::vec3(programState->tempScale));
-            simpleDepthShader.setMat4("model", model);
-            ourModel.Draw(simpleDepthShader);
-
-    
-            //renderovanje lampe
-            for(int i = 0; i < 5; i++) {
-                model = glm::mat4(1.0f);
-                model = glm::translate(model, glm::vec3(-4.0f, 0.0f, i * 4.0f));
-                model = glm::scale(model, glm::vec3(0.4f));
-                model = glm::rotate(model, glm::radians(programState->tempRotation), glm::vec3(0, 1, 0));
-                simpleDepthShader.setMat4("model", model);
-                ulicnaSvetiljkaModel.Draw(simpleDepthShader);
-            }
-    
-            //podloga
-
-            glActiveTexture(GL_TEXTURE0);
-            glBindTexture(GL_TEXTURE_2D, podlogaDiffuseMap);
-            glActiveTexture(GL_TEXTURE1);
-            glBindTexture(GL_TEXTURE_2D, podlogaSpecularMap);
-
-            model = glm::mat4(1.0f);
-            simpleDepthShader.setMat4("model", model);
-
-            //za blinfonga treba shinnes 4* veci al trava ne sme da se presijava bas tako da tu treba obratiti paznju
-            //simpleDepthShader.setFloat("material.shininess", 32.0f);
-            glBindVertexArray(podlogaVAO);
-            glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
-
-        glBindFramebuffer(GL_FRAMEBUFFER, 0);
-        // -------------------------------------------
-
-        // render
-
         glViewport(0, 0, SCR_WIDTH, SCR_HEIGHT);
+
+        glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-        // ANTI-ALIASING postaje HDR
-        // *************************************************************************************************************
-        //glBindFramebuffer(GL_FRAMEBUFFER, framebuffer);
-        glBindFramebuffer(GL_FRAMEBUFFER, hdrFBO);
-        glClearColor(programState->clearColor.r, programState->clearColor.g, programState->clearColor.b, 1.0f);
-        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-        glEnable(GL_DEPTH_TEST);
-        // *************************************************************************************************************
+        if(programState->introComplete == false)
+        {
+            // intro speed
+            programState->camera.Position.z -= 15.0f * deltaTime;
+        }
 
+        if(programState->introComplete == false && programState->camera.Position.z < 0) {
+            programState->enabledKeyboardInput = true;
+            programState->enabledMouseInput = true;
+            programState->camera.Position.x = -1.5f;
+            programState->introComplete = true;
+        }
+
+        // ovo je intro render dok se "vozimo kolima"
+        if(!programState->introComplete) {
+            // 1. geometry pass: render scene's geometry/color data into gbuffer
+            // -----------------------------------------------------------------
+            glBindFramebuffer(GL_FRAMEBUFFER, gBuffer);
+            glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+            glm::mat4 projection = glm::perspective(glm::radians(programState->camera.Zoom),
+                                                    (float) SCR_WIDTH / (float) SCR_HEIGHT, 0.1f, 100.0f);
+            glm::mat4 view = programState->camera.GetViewMatrix();
+            glm::mat4 model = glm::mat4(1.0f);
+            shaderGeometryPass.use();
+            shaderGeometryPass.setMat4("projection", projection);
+            shaderGeometryPass.setMat4("view", view);
+            for (unsigned int i = 0; i < 10; i++) {
+                model = glm::mat4(1.0f);
+                model = glm::translate(model, glm::vec3(-4.0f, 0.0f, i * 12.0f));
+                model = glm::scale(model, glm::vec3(0.5f));
+                shaderGeometryPass.setMat4("model", model);
+                ulicnaSvetiljkaModel.Draw(shaderGeometryPass);
+            }
+            glDisable(GL_CULL_FACE);
+                // crtanje podloge
+                model = glm::mat4(1.0f);
+                shaderGeometryPass.setMat4("model", model);
+                glActiveTexture(GL_TEXTURE0);
+                glBindTexture(GL_TEXTURE_2D, podlogaDiffuseMap);
+                glActiveTexture(GL_TEXTURE1);
+                glBindTexture(GL_TEXTURE_2D, podlogaSpecularMap);
+                glActiveTexture(GL_TEXTURE2);
+                glBindVertexArray(podlogaVAO);
+                glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);                
+            glEnable(GL_CULL_FACE);
+
+            // renderovanje ulice
+            model = glm::mat4(1.0f);
+            model = glm::translate(model, glm::vec3(-0.2f, -1.0f, 11.0f));
+            model = glm::rotate(model, glm::radians(90.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+            shaderGeometryPass.setMat4("model", model);
+            roadModel.Draw(shaderGeometryPass);
+            model = glm::mat4(1.0f);
+            model = glm::translate(model, glm::vec3(-0.2f, -1.0f, 42.68f));
+            model = glm::rotate(model, glm::radians(90.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+            shaderGeometryPass.setMat4("model", model);
+            roadModel.Draw(shaderGeometryPass);
+            model = glm::mat4(1.0f);
+            model = glm::translate(model, glm::vec3(-0.2f, -1.0f, 74.36f));
+            model = glm::rotate(model, glm::radians(90.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+            shaderGeometryPass.setMat4("model", model);
+            roadModel.Draw(shaderGeometryPass);
+            model = glm::mat4(1.0f);
+            model = glm::translate(model, glm::vec3(-0.2f, -1.0f, 106.04f));
+            model = glm::rotate(model, glm::radians(90.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+            shaderGeometryPass.setMat4("model", model);
+            roadModel.Draw(shaderGeometryPass);
+
+            glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+            // 2. lighting pass: calculate lighting by iterating over a screen filled quad pixel-by-pixel using the gbuffer's content.
+            // -----------------------------------------------------------------------------------------------------------------------
+            glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+            shaderLightingPass.use();
+            glActiveTexture(GL_TEXTURE0);
+            glBindTexture(GL_TEXTURE_2D, gPosition);
+            glActiveTexture(GL_TEXTURE1);
+            glBindTexture(GL_TEXTURE_2D, gNormal);
+            glActiveTexture(GL_TEXTURE2);
+            glBindTexture(GL_TEXTURE_2D, gAlbedoSpec);
+            // send light relevant uniforms
+            for (unsigned int i = 0; i < lightPositions.size(); i++) {
+                shaderLightingPass.setVec3("lights[" + std::to_string(i) + "].position", lightPositions[i]);
+                shaderLightingPass.setVec3("lights[" + std::to_string(i) + "].direction", glm::vec3(0.0f, -1.0f, 0.0f));
+
+                shaderLightingPass.setVec3("lights[" + std::to_string(i) + "].color",
+                                           sin((float) glfwGetTime() * lightColors[i]) / 2.0f + 0.5f);
+                shaderLightingPass.setVec3("lights[" + std::to_string(i) + "].ambient", glm::vec3(0.01f));
+                shaderLightingPass.setVec3("lights[" + std::to_string(i) + "].diffuse", 1.0f, 1.0f, 1.0f);
+                shaderLightingPass.setVec3("lights[" + std::to_string(i) + "].specular", 1.0f, 1.0f, 1.0f);
+
+                shaderLightingPass.setFloat("lights[" + std::to_string(i) + "].constant", 1.0f);
+                shaderLightingPass.setFloat("lights[" + std::to_string(i) + "].linear", 0.06f);
+                shaderLightingPass.setFloat("lights[" + std::to_string(i) + "].quadratic", 0.032f);
+
+                shaderLightingPass.setFloat("lights[" + std::to_string(i) + "].cutOff",
+                                            glm::cos(glm::radians(15.0f + (sin((float)glfwGetTime()) / 2.0f + 0.5) * 3)));
+                shaderLightingPass.setFloat("lights[" + std::to_string(i) + "].outerCutOff",
+                                            glm::cos(glm::radians(25.0f + (cos((float)glfwGetTime()) / 2.0f + 0.5) * 5)));
+            }
+            shaderLightingPass.setVec3("viewPos", programState->camera.Position);
+            // finally render quad
+            renderQuad();
+
+            // copy content of geometry's depth buffer to default framebuffer's depth buffer
+            glBindFramebuffer(GL_READ_FRAMEBUFFER, gBuffer);
+            glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
+            glBlitFramebuffer(0, 0, SCR_WIDTH, SCR_HEIGHT, 0, 0, SCR_WIDTH, SCR_HEIGHT, GL_DEPTH_BUFFER_BIT, GL_NEAREST);
+            glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+            // 3. render lights on top of scene
+            // --------------------------------
+            shaderLightBox.use();
+            shaderLightBox.setMat4("projection", projection);
+            shaderLightBox.setMat4("view", view);
+            for (unsigned int i = 0; i < lightPositions.size(); i++) {
+                model = glm::mat4(1.0f);
+                model = glm::translate(model, lightPositions[i]);
+                model = glm::scale(model, glm::vec3(0.35f, 0.1f, 0.30f));
+                shaderLightBox.setMat4("model", model);
+                shaderLightBox.setVec3("lightColor", lightColors[i]);
+                renderCube();
+            }
+        }  
+
+        if(programState->introComplete) {
+          // ANTI-ALIASING postaje HDR
+          // *************************************************************************************************************
+          //glBindFramebuffer(GL_FRAMEBUFFER, framebuffer);
+          glBindFramebuffer(GL_FRAMEBUFFER, hdrFBO);
+          glClearColor(programState->clearColor.r, programState->clearColor.g, programState->clearColor.b, 1.0f);
+          glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+          glEnable(GL_DEPTH_TEST);
+          // *************************************************************************************************************
+//             // ANTI-ALIASING: preusmeravamo renderovanje na nas framebuffer da bismo imali MSAA
+//             // *************************************************************************************************************
+//             glBindFramebuffer(GL_FRAMEBUFFER, framebuffer);
+//             glClearColor(programState->clearColor.r, programState->clearColor.g, programState->clearColor.b, 1.0f);
+//             glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+//             glEnable(GL_DEPTH_TEST);
+//             // *************************************************************************************************************
+        }
 
         //object shader
         objShader.use();
@@ -574,13 +686,6 @@ int main() {
         objShader.setVec3("dirLight.diffuse", 0.05f, 0.05f, 0.05);   //privremeno samo za hdr
         objShader.setVec3("dirLight.specular", 0.2f, 0.2f, 0.2f);
 
-        //ovde treba pointlajtovi
-        //
-
-        // jedan pointlajt za testiranje senki
-//        lightPos.x = sin(glfwGetTime()) * 3.0f;
-//        lightPos.z = cos(glfwGetTime()) * 2.0f;
-//        lightPos.y = 5.0 + cos(glfwGetTime()) * 1.0f;
         objShader.setVec3("pointLight.position", lightPos);
         objShader.setVec3("pointLight.ambient", glm::vec3(1.0f));
         objShader.setVec3("pointLight.diffuse", 0.05f, 0.05f, 0.05);
@@ -589,8 +694,8 @@ int main() {
         objShader.setFloat("pointLight.linear", 0.09f);
         objShader.setFloat("pointLight.quadratic", 0.032f);
 
-        //spotlight
-        objShader.setVec3("lampa.position", programState->camera.Position);
+        // spotlight - baterijska lampa
+        objShader.setVec3("lampa.position", programState->camera.Position + 0.35f * programState->camera.Front + 0.07f * programState->camera.Right - 0.08f * programState->camera.Up);
         objShader.setVec3("lampa.direction", programState->camera.Front);
         objShader.setVec3("lampa.ambient", 0.0f, 0.0f, 0.0f);
         if(programState->spotlight) {
@@ -607,8 +712,6 @@ int main() {
         objShader.setFloat("lampa.cutOff", glm::cos(glm::radians(10.0f)));
         objShader.setFloat("lampa.outerCutOff", glm::cos(glm::radians(15.0f)));
 
-        objShader.setFloat("far_plane", far_plane);
-
         // renderovanje ranca:
         model = glm::mat4(1.0f);
         model = glm::translate(model,programState->tempPosition);
@@ -616,25 +719,46 @@ int main() {
         objShader.setMat4("model", model);
         ourModel.Draw(objShader);
 
-        // renderovanje baterijske lampe:
-        model = CalcFlashlightPosition();
-        objShader.setMat4("model", model);
-        flashlightModel.Draw(objShader);
-
-        //renderovanje lampe
-        for(int i = 0; i < 5; i++) {
-            model = glm::mat4(1.0f);
-            model = glm::translate(model, glm::vec3(-4.0f, 0.0f, i * 4.0f));
-            model = glm::scale(model, glm::vec3(0.4f));
-            model = glm::rotate(model, glm::radians(programState->tempRotation), glm::vec3(0, 1, 0));
+        if(programState->introComplete) {
+            // renderovanje baterijske lampe:
+            model = CalcFlashlightPosition();
             objShader.setMat4("model", model);
-            ulicnaSvetiljkaModel.Draw(objShader);
+            flashlightModel.Draw(objShader);
+
+            // renderovanje automobila:
+            model = glm::mat4(1.0f);
+            model = glm::translate(model, glm::vec3(0.4f, 0.2f, 1.0f));
+            model = glm::rotate(model, glm::radians(-90.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+            model = glm::scale(model, glm::vec3(0.85f));
+            objShader.setMat4("model", model);
+            carModel.Draw(objShader);
         }
 
-        glDisable(GL_CULL_FACE); // za uspravnu travu i za podlogu nam ne treba odsecanje strana
-        glBindVertexArray(transparentVAO2);
-        glBindTexture(GL_TEXTURE_2D, transparentTexture);
+        // renderovanje stop znaka:
         model = glm::mat4(1.0f);
+        model = glm::translate(model, glm::vec3(-0.69f, 0.15f, -4.0f));
+        model = glm::rotate(model, glm::radians(90.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+        model = glm::scale(model, glm::vec3(0.25f));
+        objShader.setMat4("model", model);
+        roadStopModel.Draw(objShader);
+
+        glDisable(GL_CULL_FACE);
+        // renderovanje kuce:
+        model = glm::mat4(1.0f);
+        model = glm::translate(model, glm::vec3(-20, 0.01, -20));
+        model = glm::scale(model, glm::vec3(0.7f));
+        objShader.setMat4("model", model);
+        houseModel.Draw(objShader);
+
+        // renderovanje supe:
+        model = glm::mat4(1.0f);
+        model = glm::translate(model, glm::vec3(25, 0, 25));
+        model = glm::scale(model, glm::vec3(0.3));
+        objShader.setMat4("model", model);
+        cottageHouseModel.Draw(objShader);
+
+        glBindVertexArray(tallgrassVAO);
+        glBindTexture(GL_TEXTURE_2D, tallgrassTexture);
         for (unsigned int i = 0; i < vegetation.size(); i++)
         {
             model = glm::mat4(1.0f);
@@ -646,23 +770,51 @@ int main() {
             glDrawArrays(GL_TRIANGLES, 0, 6);
         }
 
+        if(programState->introComplete) {
+            // renderovanje ulice
+            model = glm::mat4(1.0f);
+            model = glm::translate(model, glm::vec3(-0.2f, -1.0f, 11.0f));
+            model = glm::rotate(model, glm::radians(90.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+            objShader.setMat4("model", model);
+            roadModel.Draw(objShader);
+            model = glm::mat4(1.0f);
+            model = glm::translate(model, glm::vec3(-0.2f, -1.0f, 42.68f));
+            model = glm::rotate(model, glm::radians(90.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+            objShader.setMat4("model", model);
+            roadModel.Draw(objShader);
+            model = glm::mat4(1.0f);
+            model = glm::translate(model, glm::vec3(-0.2f, -1.0f, 74.36f));
+            model = glm::rotate(model, glm::radians(90.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+            objShader.setMat4("model", model);
+            roadModel.Draw(objShader);
+            model = glm::mat4(1.0f);
+            model = glm::translate(model, glm::vec3(-0.2f, -1.0f, 106.04f));
+            model = glm::rotate(model, glm::radians(90.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+            objShader.setMat4("model", model);
+            roadModel.Draw(objShader);
 
-        //podloga
+            for (unsigned int i = 0; i < 10; i++) {
+                model = glm::mat4(1.0f);
+                model = glm::translate(model, glm::vec3(-4.0f, 0.0f, i * 12.0f));
+                model = glm::scale(model, glm::vec3(0.5f));
+                objShader.setMat4("model", model);
+                ulicnaSvetiljkaModel.Draw(objShader);
+            }
 
-        glActiveTexture(GL_TEXTURE0);
-        glBindTexture(GL_TEXTURE_2D, podlogaDiffuseMap);
-        glActiveTexture(GL_TEXTURE1);
-        glBindTexture(GL_TEXTURE_2D, podlogaSpecularMap);
-        glActiveTexture(GL_TEXTURE2);
-        glBindTexture(GL_TEXTURE_CUBE_MAP, depthCubeMap);
+            //podloga
+            glActiveTexture(GL_TEXTURE0);
+            glBindTexture(GL_TEXTURE_2D, podlogaDiffuseMap);
+            glActiveTexture(GL_TEXTURE1);
+            glBindTexture(GL_TEXTURE_2D, podlogaSpecularMap);
 
-        model = glm::mat4(1.0f);
-        objShader.setMat4("model", model);
+            model = glm::mat4(1.0f);
+            objShader.setMat4("model", model);
 
-        //za blinfonga treba shinnes 4* veci al trava ne sme da se presijava bas tako da tu treba obratiti paznju
-        //objShader.setFloat("material.shininess", 32.0f);
-        glBindVertexArray(podlogaVAO);
-        glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
+            //za blinfonga treba shinnes 4* veci al trava ne sme da se presijava bas tako da tu treba obratiti paznju
+            //objShader.setFloat("material.shininess", 32.0f);
+            glBindVertexArray(podlogaVAO);
+            glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
+        }
         glEnable(GL_CULL_FACE);
 
 
@@ -685,38 +837,48 @@ int main() {
         glDepthMask(GL_TRUE);
         glDepthFunc(GL_LESS); // set depth function back to default
 
+        
+        if(programState->introComplete) {
+//             // ANTI-ALIASING: ukljucivanje
+//             // *************************************************************************************************************
+//             glBindFramebuffer(GL_FRAMEBUFFER, 0);
+//             glClearColor(programState->clearColor.r, programState->clearColor.g, programState->clearColor.b, 1.0f);
+//             glClear(GL_COLOR_BUFFER_BIT);
+//             glDisable(GL_DEPTH_TEST);
 
-        // ANTI-ALIASING: ukljucivanje
-        // ****************************************************************************************************
-        glBindFramebuffer(GL_FRAMEBUFFER, framebuffer);
-        glClearColor(programState->clearColor.r, programState->clearColor.g, programState->clearColor.b, 1.0f);
-        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-        hdrShader.use();
-        glActiveTexture(GL_TEXTURE0);
-        glBindTexture(GL_TEXTURE_2D, colorBuffer);
-        hdrShader.setInt("hdr", hdr);
-        hdrShader.setFloat("exposure", exposure);
-        renderQuad();
+            // ANTI-ALIASING: ukljucivanje
+            // ****************************************************************************************************
+            glBindFramebuffer(GL_FRAMEBUFFER, framebuffer);
+            glClearColor(programState->clearColor.r, programState->clearColor.g, programState->clearColor.b, 1.0f);
+            glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-        std::cout << "hdr: " << (hdr ? "on" : "off") << "| exposure: " << exposure << '\n';
+            hdrShader.use();
+            glActiveTexture(GL_TEXTURE0);
+            glBindTexture(GL_TEXTURE_2D, colorBuffer);
+            hdrShader.setInt("hdr", hdr);
+            hdrShader.setFloat("exposure", exposure);
+            renderQuad();
 
-        glBindFramebuffer(GL_FRAMEBUFFER, 0);
-        glClearColor(programState->clearColor.r, programState->clearColor.g, programState->clearColor.b, 1.0f);
-        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-//        glDisable(GL_DEPTH_TEST);
+            std::cout << "hdr: " << (hdr ? "on" : "off") << "| exposure: " << exposure << '\n';
 
-        screenShader.use();
+            glBindFramebuffer(GL_FRAMEBUFFER, 0);
+            glClearColor(programState->clearColor.r, programState->clearColor.g, programState->clearColor.b, 1.0f);
+            glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    //        glDisable(GL_DEPTH_TEST);
 
-        screenShader.setFloat("SCR_WIDTH", SCR_WIDTH);
-        screenShader.setFloat("SCR_HEIGHT", SCR_HEIGHT);
-        screenShader.setBool("grayscaleEnabled", programState->grayscaleEnabled);
 
-        glBindVertexArray(quadVAO);
-        glActiveTexture(GL_TEXTURE0);
-        glBindTexture(GL_TEXTURE_2D_MULTISAMPLE, textureColorBufferMultiSampled);
-        glDrawArrays(GL_TRIANGLES, 0, 6);
-        // *************************************************************************************************************
+            screenShader.use();
+            screenShader.setFloat("SCR_WIDTH", SCR_WIDTH);
+            screenShader.setFloat("SCR_HEIGHT", SCR_HEIGHT);
+            screenShader.setBool("grayscaleEnabled", programState->grayscaleEnabled);
+
+            glBindVertexArray(quadVAO);
+            glActiveTexture(GL_TEXTURE0);
+            glBindTexture(GL_TEXTURE_2D_MULTISAMPLE, textureColorBufferMultiSampled);
+            glDrawArrays(GL_TRIANGLES, 0, 6);
+            // *************************************************************************************************************
+        }
 
         if (programState->ImGuiEnabled)
             DrawImGui(programState);
@@ -734,8 +896,8 @@ int main() {
 
     glDeleteVertexArrays(1, &skyboxVAO);
     glDeleteBuffers(1, &skyboxVAO);
-    glDeleteVertexArrays(1, &transparentVAO2);
-    glDeleteBuffers(1, &transparentVAO2);
+    glDeleteVertexArrays(1, &tallgrassVAO);
+    glDeleteBuffers(1, &tallgrassVAO);
 
     // glfw: terminate, clearing all previously allocated GLFW resources.
     glfwTerminate();
@@ -776,41 +938,44 @@ void renderQuad()
 void processInput(GLFWwindow *window) {
     if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
         glfwSetWindowShouldClose(window, true);
-
-    if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
-        programState->camera.ProcessKeyboard(FORWARD, deltaTime);
-    if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS)
-        programState->camera.ProcessKeyboard(BACKWARD, deltaTime);
-    if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS)
-        programState->camera.ProcessKeyboard(LEFT, deltaTime);
-    if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS)
-        programState->camera.ProcessKeyboard(RIGHT, deltaTime);
-    if (glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS)
-        programState->camera.ProcessKeyboard(DOWN, deltaTime);
-    if (glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS)
-        programState->camera.ProcessKeyboard(UP, deltaTime);
-
-
+  
     if (glfwGetKey(window, GLFW_KEY_H) == GLFW_PRESS && !hdrKeyPressed)
     {
-        hdr = !hdr;
-        hdrKeyPressed = true;
+          hdr = !hdr;
+          hdrKeyPressed = true;
     }
     if (glfwGetKey(window, GLFW_KEY_H) == GLFW_RELEASE)
     {
-        hdrKeyPressed = false;
+          hdrKeyPressed = false;
     }
 
     if (glfwGetKey(window, GLFW_KEY_Q) == GLFW_PRESS)
     {
         if (exposure > 0.0f)
-            exposure -= 0.01f;
+             exposure -= 0.01f;
         else
             exposure = 0.0f;
     }
     else if (glfwGetKey(window, GLFW_KEY_E) == GLFW_PRESS)
     {
         exposure += 0.01f;
+    }
+
+
+    if(programState->enabledKeyboardInput) {
+        if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
+            programState->camera.ProcessKeyboard(FORWARD, deltaTime);
+        if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS)
+            programState->camera.ProcessKeyboard(BACKWARD, deltaTime);
+        if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS)
+            programState->camera.ProcessKeyboard(LEFT, deltaTime);
+        if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS)
+            programState->camera.ProcessKeyboard(RIGHT, deltaTime);
+        if (glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS)
+            programState->camera.ProcessKeyboard(DOWN, deltaTime);
+        if (glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS)
+            programState->camera.ProcessKeyboard(UP, deltaTime);
+
     }
 }
 
@@ -825,20 +990,22 @@ void framebuffer_size_callback(GLFWwindow *window, int width, int height) {
 // glfw: whenever the mouse moves, this callback is called
 // -------------------------------------------------------
 void mouse_callback(GLFWwindow *window, double xpos, double ypos) {
-    if (firstMouse) {
+    if(programState->enabledMouseInput) {
+        if (firstMouse) {
+            lastX = xpos;
+            lastY = ypos;
+            firstMouse = false;
+        }
+
+        float xoffset = xpos - lastX;
+        float yoffset = lastY - ypos; // reversed since y-coordinates go from bottom to top
+
         lastX = xpos;
         lastY = ypos;
-        firstMouse = false;
+
+        if (programState->CameraMouseMovementUpdateEnabled)
+            programState->camera.ProcessMouseMovement(xoffset, yoffset);
     }
-
-    float xoffset = xpos - lastX;
-    float yoffset = lastY - ypos; // reversed since y-coordinates go from bottom to top
-
-    lastX = xpos;
-    lastY = ypos;
-
-    if (programState->CameraMouseMovementUpdateEnabled)
-        programState->camera.ProcessMouseMovement(xoffset, yoffset);
 }
 
 // glfw: whenever the mouse scroll wheel scrolls, this callback is called
@@ -876,6 +1043,7 @@ void key_callback(GLFWwindow *window, int key, int scancode, int action, int mod
         if(!programState->AAEnabled)
             glDisable(GL_MULTISAMPLE);
     }
+
     if (key == GLFW_KEY_F3 && action == GLFW_PRESS)
         programState->grayscaleEnabled = !programState->grayscaleEnabled;
 
@@ -891,7 +1059,6 @@ void key_callback(GLFWwindow *window, int key, int scancode, int action, int mod
     if (key == GLFW_KEY_K && action == GLFW_PRESS) {
         programState->spotlight = !programState->spotlight;
     }
-
 }
 
 void DrawImGui(ProgramState *programState) {
@@ -949,7 +1116,6 @@ void DrawImGui(ProgramState *programState) {
     ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 }
 
-
 glm::mat4 CalcFlashlightPosition() {
     Camera c = programState->camera;
 
@@ -962,6 +1128,108 @@ glm::mat4 CalcFlashlightPosition() {
     model = glm::scale(model, glm::vec3(0.025f));
 
     return model;
+}
+
+unsigned int quadVAO = 0;
+unsigned int quadVBO;
+void renderQuad()
+{
+    if (quadVAO == 0)
+    {
+        float quadVertices[] = {
+                // positions        // texture Coords
+                -1.0f,  1.0f, 0.0f, 0.0f, 1.0f,
+                -1.0f, -1.0f, 0.0f, 0.0f, 0.0f,
+                1.0f,  1.0f, 0.0f, 1.0f, 1.0f,
+                1.0f, -1.0f, 0.0f, 1.0f, 0.0f,
+        };
+        // setup plane VAO
+        glGenVertexArrays(1, &quadVAO);
+        glGenBuffers(1, &quadVBO);
+        glBindVertexArray(quadVAO);
+        glBindBuffer(GL_ARRAY_BUFFER, quadVBO);
+        glBufferData(GL_ARRAY_BUFFER, sizeof(quadVertices), &quadVertices, GL_STATIC_DRAW);
+        glEnableVertexAttribArray(0);
+        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)0);
+        glEnableVertexAttribArray(1);
+        glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)(3 * sizeof(float)));
+    }
+    glBindVertexArray(quadVAO);
+    glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+    glBindVertexArray(0);
+}
+
+unsigned int cubeVAO = 0;
+unsigned int cubeVBO = 0;
+void renderCube()
+{
+    // initialize (if necessary)
+    if (cubeVAO == 0)
+    {
+        float vertices[] = {
+                // back face
+                -1.0f, -1.0f, -1.0f,  0.0f,  0.0f, -1.0f, 0.0f, 0.0f, // bottom-left
+                1.0f,  1.0f, -1.0f,  0.0f,  0.0f, -1.0f, 1.0f, 1.0f, // top-right
+                1.0f, -1.0f, -1.0f,  0.0f,  0.0f, -1.0f, 1.0f, 0.0f, // bottom-right
+                1.0f,  1.0f, -1.0f,  0.0f,  0.0f, -1.0f, 1.0f, 1.0f, // top-right
+                -1.0f, -1.0f, -1.0f,  0.0f,  0.0f, -1.0f, 0.0f, 0.0f, // bottom-left
+                -1.0f,  1.0f, -1.0f,  0.0f,  0.0f, -1.0f, 0.0f, 1.0f, // top-left
+                // front face
+                -1.0f, -1.0f,  1.0f,  0.0f,  0.0f,  1.0f, 0.0f, 0.0f, // bottom-left
+                1.0f, -1.0f,  1.0f,  0.0f,  0.0f,  1.0f, 1.0f, 0.0f, // bottom-right
+                1.0f,  1.0f,  1.0f,  0.0f,  0.0f,  1.0f, 1.0f, 1.0f, // top-right
+                1.0f,  1.0f,  1.0f,  0.0f,  0.0f,  1.0f, 1.0f, 1.0f, // top-right
+                -1.0f,  1.0f,  1.0f,  0.0f,  0.0f,  1.0f, 0.0f, 1.0f, // top-left
+                -1.0f, -1.0f,  1.0f,  0.0f,  0.0f,  1.0f, 0.0f, 0.0f, // bottom-left
+                // left face
+                -1.0f,  1.0f,  1.0f, -1.0f,  0.0f,  0.0f, 1.0f, 0.0f, // top-right
+                -1.0f,  1.0f, -1.0f, -1.0f,  0.0f,  0.0f, 1.0f, 1.0f, // top-left
+                -1.0f, -1.0f, -1.0f, -1.0f,  0.0f,  0.0f, 0.0f, 1.0f, // bottom-left
+                -1.0f, -1.0f, -1.0f, -1.0f,  0.0f,  0.0f, 0.0f, 1.0f, // bottom-left
+                -1.0f, -1.0f,  1.0f, -1.0f,  0.0f,  0.0f, 0.0f, 0.0f, // bottom-right
+                -1.0f,  1.0f,  1.0f, -1.0f,  0.0f,  0.0f, 1.0f, 0.0f, // top-right
+                // right face
+                1.0f,  1.0f,  1.0f,  1.0f,  0.0f,  0.0f, 1.0f, 0.0f, // top-left
+                1.0f, -1.0f, -1.0f,  1.0f,  0.0f,  0.0f, 0.0f, 1.0f, // bottom-right
+                1.0f,  1.0f, -1.0f,  1.0f,  0.0f,  0.0f, 1.0f, 1.0f, // top-right
+                1.0f, -1.0f, -1.0f,  1.0f,  0.0f,  0.0f, 0.0f, 1.0f, // bottom-right
+                1.0f,  1.0f,  1.0f,  1.0f,  0.0f,  0.0f, 1.0f, 0.0f, // top-left
+                1.0f, -1.0f,  1.0f,  1.0f,  0.0f,  0.0f, 0.0f, 0.0f, // bottom-left
+                // bottom face
+                -1.0f, -1.0f, -1.0f,  0.0f, -1.0f,  0.0f, 0.0f, 1.0f, // top-right
+                1.0f, -1.0f, -1.0f,  0.0f, -1.0f,  0.0f, 1.0f, 1.0f, // top-left
+                1.0f, -1.0f,  1.0f,  0.0f, -1.0f,  0.0f, 1.0f, 0.0f, // bottom-left
+                1.0f, -1.0f,  1.0f,  0.0f, -1.0f,  0.0f, 1.0f, 0.0f, // bottom-left
+                -1.0f, -1.0f,  1.0f,  0.0f, -1.0f,  0.0f, 0.0f, 0.0f, // bottom-right
+                -1.0f, -1.0f, -1.0f,  0.0f, -1.0f,  0.0f, 0.0f, 1.0f, // top-right
+                // top face
+                -1.0f,  1.0f, -1.0f,  0.0f,  1.0f,  0.0f, 0.0f, 1.0f, // top-left
+                1.0f,  1.0f , 1.0f,  0.0f,  1.0f,  0.0f, 1.0f, 0.0f, // bottom-right
+                1.0f,  1.0f, -1.0f,  0.0f,  1.0f,  0.0f, 1.0f, 1.0f, // top-right
+                1.0f,  1.0f,  1.0f,  0.0f,  1.0f,  0.0f, 1.0f, 0.0f, // bottom-right
+                -1.0f,  1.0f, -1.0f,  0.0f,  1.0f,  0.0f, 0.0f, 1.0f, // top-left
+                -1.0f,  1.0f,  1.0f,  0.0f,  1.0f,  0.0f, 0.0f, 0.0f  // bottom-left
+        };
+        glGenVertexArrays(1, &cubeVAO);
+        glGenBuffers(1, &cubeVBO);
+        // fill buffer
+        glBindBuffer(GL_ARRAY_BUFFER, cubeVBO);
+        glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
+        // link vertex attributes
+        glBindVertexArray(cubeVAO);
+        glEnableVertexAttribArray(0);
+        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)0);
+        glEnableVertexAttribArray(1);
+        glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)(3 * sizeof(float)));
+        glEnableVertexAttribArray(2);
+        glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)(6 * sizeof(float)));
+        glBindBuffer(GL_ARRAY_BUFFER, 0);
+        glBindVertexArray(0);
+    }
+    // render Cube
+    glBindVertexArray(cubeVAO);
+    glDrawArrays(GL_TRIANGLES, 0, 36);
+    glBindVertexArray(0);
 }
 
 unsigned int loadCubeMap(vector<std::string> faces)
