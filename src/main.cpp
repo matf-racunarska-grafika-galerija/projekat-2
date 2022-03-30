@@ -158,6 +158,7 @@ int main() {
     Shader screenShader("resources/shaders/anti-aliasing.vs", "resources/shaders/anti-aliasing.fs");    // za ANTI-ALIASING
     Shader simpleDepthShader("resources/shaders/depthShader.vs", "resources/shaders/depthShader.fs", "resources/shaders/depthShader.gs");
     Shader skyboxShader("resources/shaders/skybox.vs", "resources/shaders/skybox.fs");
+    
 
     // load models
     Model ourModel("resources/objects/backpack/backpack.obj");
@@ -169,6 +170,14 @@ int main() {
     stbi_set_flip_vertically_on_load(false);
     Model flashlightModel("resources/objects/flashlight/flashlight.obj");
     flashlightModel.SetShaderTextureNamePrefix("material.");
+    stbi_set_flip_vertically_on_load(true);
+
+    Model houseModel("resources/objects/House/House.obj");
+    houseModel.SetShaderTextureNamePrefix("material.");
+
+    stbi_set_flip_vertically_on_load(false);
+    Model cottageHouseModel("resources/objects/cottage_house/cottage_blender.obj");
+    cottageHouseModel.SetShaderTextureNamePrefix("material.");
     stbi_set_flip_vertically_on_load(true);
 
     //podloga
@@ -196,11 +205,16 @@ int main() {
     unsigned int podlogaDiffuseMap = TextureFromFile("grass_diffuse.png", "resources/textures");
     unsigned int podlogaSpecularMap = TextureFromFile("grass_specular.png", "resources/textures");
     unsigned int tallgrassTexture = TextureFromFile("grass.png", "resources/textures/");
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 
     // depthMap
     const unsigned int SHADOW_WIDTH = 1024, SHADOW_HEIGHT = 1024;
     unsigned int depthCubeMap;
-    unsigned int depthMapFBO = setupDepthMap(depthCubeMap, SHADOW_WIDTH, SHADOW_HEIGHT);
+    //unsigned int depthMapFBO = setupDepthMap(depthCubeMap, SHADOW_WIDTH, SHADOW_HEIGHT);
+
+    unsigned int depth;
+    unsigned int depthMapFBO = setupDepthMap2(depth, depthCubeMap, SHADOW_WIDTH, SHADOW_HEIGHT);
 
     // ANTI-ALIASING
     unsigned int framebuffer, textureColorBufferMultiSampled;
@@ -214,6 +228,7 @@ int main() {
     objShader.setInt("material.texture_diffuse1", 0);
     objShader.setInt("material.texture_specular1", 1);
     objShader.setInt("depthMap", 2);
+
 
     // ostale konfiguracije i inicijalizacije
     glm::vec3 lightPos(-5.0f, 4.0f, -5.0f);
@@ -232,7 +247,7 @@ int main() {
         // renderovanje scene iz pozicije svetla
         // -------------------------------------------
         glBindFramebuffer(GL_FRAMEBUFFER, framebuffer);
-        glClearColor(programState->clearColor.r, programState->clearColor.g, programState->clearColor.b, 1.0f);
+        glClearColor(FLT_MAX, FLT_MAX, FLT_MAX, FLT_MAX);
 
 
         float near_plane = 1.0f;
@@ -341,7 +356,7 @@ int main() {
         objShader.setFloat("pointLight.quadratic", 0.032f);
 
         // spotlight - baterijska lampa
-        objShader.setVec3("lampa.position", programState->camera.Position);
+        objShader.setVec3("lampa.position", programState->camera.Position + 0.35f * programState->camera.Front + 0.07f * programState->camera.Right - 0.08f * programState->camera.Up);
         objShader.setVec3("lampa.direction", programState->camera.Front);
         objShader.setVec3("lampa.ambient", 0.0f, 0.0f, 0.0f);
         if(programState->spotlight) {
@@ -382,7 +397,21 @@ int main() {
             ulicnaSvetiljkaModel.Draw(objShader);
         }
 
-        glDisable(GL_CULL_FACE); // za uspravnu travu i za podlogu nam ne treba odsecanje strana
+        glDisable(GL_CULL_FACE);
+        // renderovanje kuce:
+        model = glm::mat4(1.0f);
+        model = glm::translate(model, glm::vec3(-20, 0.01, -20));
+        model = glm::scale(model, glm::vec3(0.7f));
+        objShader.setMat4("model", model);
+        houseModel.Draw(objShader);
+
+        // renderovanje supe:
+        model = glm::mat4(1.0f);
+        model = glm::translate(model, glm::vec3(25, 0, 25));
+        model = glm::scale(model, glm::vec3(0.3));
+        objShader.setMat4("model", model);
+        cottageHouseModel.Draw(objShader);
+
         glBindVertexArray(tallgrassVAO);
         glBindTexture(GL_TEXTURE_2D, tallgrassTexture);
         for (unsigned int i = 0; i < vegetation.size(); i++)

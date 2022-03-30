@@ -81,7 +81,7 @@ unsigned int setupSkybox(unsigned int &cubeMapTexture)
 unsigned int setupFloorPlane()
 {
     float podlogaVertices[] = {
-            // positions          // texture coords
+            // positions                           // normals                     // texture coords
             200.0f,  0.0f, -200.0f, 0.0f, 1.0f, 0.0f,   200.0f, 200.0f, // top right
             200.0f, 0.0f, 200.0f, 0.0f, 1.0f, 0.0f,  200.0f, 0.0f, // bottom right
             -200.0f, 0.0f, 200.0f,  0.0f, 1.0f, 0.0f, 0.0f, 0.0f, // bottom left
@@ -152,7 +152,7 @@ unsigned int setupTallGrass()
 unsigned int setupAntiAliasing(unsigned int &framebuffer, unsigned int &textureColorBufferMultiSampled, const unsigned int SCR_WIDTH, const unsigned int SCR_HEIGHT)
 {
     float quadVertices[] = {
-            // positions   // texCoords
+            // positions            // texCoords
             -1.0f,  1.0f,  0.0f, 1.0f,
             -1.0f, -1.0f,  0.0f, 0.0f,
             1.0f, -1.0f,  1.0f, 0.0f,
@@ -190,7 +190,8 @@ unsigned int setupAntiAliasing(unsigned int &framebuffer, unsigned int &textureC
     glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_RENDERBUFFER, rbo);
 
     if(glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
-        std::cerr << "ERROR::FRAMEBUFFER Framebuffer is not complete!\n";
+        std::cerr << "setupAntiAliasing::ERROR::FRAMEBUFFER Framebuffer is not complete!\n";
+
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
     return quadVAO;
@@ -213,13 +214,79 @@ unsigned int setupDepthMap(unsigned int &depthCubeMap, const unsigned int SHADOW
     glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_BORDER);
 
     glBindFramebuffer(GL_FRAMEBUFFER, depthMapFBO);
-    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, depthCubeMap, 0);
+    glFramebufferTexture(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, depthCubeMap, 0);
     // u ovaj framebuffer necemo da renderujemo boju, jer ce da cuva samo dubinu fragmenata
     glDrawBuffer(GL_NONE);
     glReadBuffer(GL_NONE);
+
+    GLenum status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
+    if(status != GL_FRAMEBUFFER_COMPLETE)
+        std::cerr << "setupDepthMap::ERROR::FRAMEBUFFER Framebuffer is not complete!\n";
+//    switch (status) {
+//        case GL_FRAMEBUFFER_UNDEFINED: std::cerr << "ERROR::FRAMEBUFFER not defined\n"; break;
+//        case GL_FRAMEBUFFER_INCOMPLETE_ATTACHMENT: std::cerr << "ERROR::FRAMEBUFFER incomplete attachment\n"; break;
+//        case GL_FRAMEBUFFER_INCOMPLETE_MISSING_ATTACHMENT: std::cerr << "ERROR::FRAMEBUFFER missing attachment\n"; break;
+//        case GL_FRAMEBUFFER_INCOMPLETE_DRAW_BUFFER: std::cerr << "ERROR::FRAMEBUFFER incomplete draw buffer\n"; break;
+//        case GL_FRAMEBUFFER_INCOMPLETE_READ_BUFFER: std::cerr << "ERROR::FRAMEBUFFER incomplete read buffer\n"; break;
+//        case GL_FRAMEBUFFER_UNSUPPORTED: std::cerr << "ERROR::FRAMEBUFFER unsupported\n"; break;
+//        case GL_FRAMEBUFFER_INCOMPLETE_MULTISAMPLE: std::cerr << "ERROR::FRAMEBUFFER incomplete multisample\n"; break;
+//        case GL_FRAMEBUFFER_INCOMPLETE_LAYER_TARGETS: std::cerr << "ERROR::FRAMEBUFFER incomplete layer targets\n"; break;
+//    }
+
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+    return depthMapFBO;
 }
 
+unsigned int setupDepthMap2(unsigned int &depth, unsigned int &depthCubeMap, const unsigned int SHADOW_WIDTH, const unsigned int SHADOW_HEIGHT)
+{
+    // Create the FBO
+    unsigned int depthMapFBO;
+    glGenFramebuffers(1, &depthMapFBO);
+
+    // Create the depth buffer
+    glGenTextures(1, &depth);
+    glBindTexture(GL_TEXTURE_2D, depth);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT32, SHADOW_WIDTH, SHADOW_HEIGHT, 0, GL_DEPTH_COMPONENT, GL_FLOAT, NULL);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glBindTexture(GL_TEXTURE_2D, 0);
+
+    // Create the cube map
+    glGenTextures(1, &depthCubeMap);
+    glBindTexture(GL_TEXTURE_CUBE_MAP, depthCubeMap);
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
+
+    for (uint i = 0 ; i < 6 ; i++) {
+        glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, 0, GL_R32F, SHADOW_WIDTH, SHADOW_HEIGHT, 0, GL_RED, GL_FLOAT, NULL);
+    }
+
+    glBindFramebuffer(GL_FRAMEBUFFER, depthMapFBO);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, depth, 0);
+
+    // Disable writes to the color buffer
+    glDrawBuffer(GL_NONE);
+
+    // Disable reads from the color buffer
+    glReadBuffer(GL_NONE);
+
+    GLenum Status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
+
+    if (Status != GL_FRAMEBUFFER_COMPLETE) {
+        printf("FB error, status: 0x%x\n", Status);
+        return false;
+    }
+
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+    return depthMapFBO;
+}
 unsigned int loadCubeMap(vector<std::string> faces)
 {
     unsigned int textureID;
