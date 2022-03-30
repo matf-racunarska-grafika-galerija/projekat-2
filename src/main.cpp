@@ -161,12 +161,11 @@ int main() {
     ImGui_ImplOpenGL3_Init("#version 330 core");
 
     // build and compile shaders
-    Shader objShader("resources/shaders/2.model_lighting.vs", "resources/shaders/2.model_lighting.fs");
+    Shader objShader("resources/shaders/objectShader.vs", "resources/shaders/objectShader.fs");
     Shader screenShader("resources/shaders/anti-aliasing.vs", "resources/shaders/anti-aliasing.fs");    // za ANTI-ALIASING
-    Shader simpleDepthShader("resources/shaders/depthShader.vs", "resources/shaders/depthShader.fs", "resources/shaders/depthShader.gs");
     Shader skyboxShader("resources/shaders/skybox.vs", "resources/shaders/skybox.fs");
 
-    Shader shaderGeometryPass("resources/shaders/gGuffer.vs", "resources/shaders/gBuffer.fs");
+    Shader shaderGeometryPass("resources/shaders/gBuffer.vs", "resources/shaders/gBuffer.fs");
     Shader shaderLightingPass("resources/shaders/deferredShadingLightingPassShader.vs", "resources/shaders/deferredShadingLigthingPassShader.fs");
     Shader shaderLightBox("resources/shaders/deferredLightShow.vs", "resources/shaders/deferredLightShow.fs");
     
@@ -230,17 +229,14 @@ int main() {
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 
-    // depthMap
-    const unsigned int SHADOW_WIDTH = 1024, SHADOW_HEIGHT = 1024;
-    unsigned int depthCubeMap;
-    //unsigned int depthMapFBO = setupDepthMap(depthCubeMap, SHADOW_WIDTH, SHADOW_HEIGHT);
-
-    unsigned int depth;
-    unsigned int depthMapFBO = setupDepthMap2(depth, depthCubeMap, SHADOW_WIDTH, SHADOW_HEIGHT);
 
     // ANTI-ALIASING
     unsigned int framebuffer, textureColorBufferMultiSampled;
     unsigned int screenVAO = setupAntiAliasing(framebuffer, textureColorBufferMultiSampled, SCR_WIDTH, SCR_HEIGHT);
+
+    // configure g-buffer framebuffer
+    unsigned int gPosition, gNormal, gAlbedoSpec;
+    unsigned int gBuffer = setupGBuffer(gPosition, gNormal, gAlbedoSpec, SCR_WIDTH, SCR_HEIGHT);
 
     // konfiguracija shadera
     screenShader.use();
@@ -249,59 +245,17 @@ int main() {
     objShader.use();
     objShader.setInt("material.texture_diffuse1", 0);
     objShader.setInt("material.texture_specular1", 1);
-    objShader.setInt("depthMap", 2);
-
-
-    // ostale konfiguracije i inicijalizacije
-    glm::vec3 lightPos(-5.0f, 4.0f, -5.0f);
-    glm::mat4 model = glm::mat4(1.0f);
-
-    // configure g-buffer framebuffer
-    // ------------------------------
-    unsigned int gBuffer;
-    glGenFramebuffers(1, &gBuffer);
-    glBindFramebuffer(GL_FRAMEBUFFER, gBuffer);
-    unsigned int gPosition, gNormal, gAlbedoSpec;
-    // position color buffer
-    glGenTextures(1, &gPosition);
-    glBindTexture(GL_TEXTURE_2D, gPosition);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F, SCR_WIDTH, SCR_HEIGHT, 0, GL_RGBA, GL_FLOAT, NULL);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, gPosition, 0);
-    // normal color buffer
-    glGenTextures(1, &gNormal);
-    glBindTexture(GL_TEXTURE_2D, gNormal);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F, SCR_WIDTH, SCR_HEIGHT, 0, GL_RGBA, GL_FLOAT, NULL);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT1, GL_TEXTURE_2D, gNormal, 0);
-    // color + specular color buffer
-    glGenTextures(1, &gAlbedoSpec);
-    glBindTexture(GL_TEXTURE_2D, gAlbedoSpec);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, SCR_WIDTH, SCR_HEIGHT, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT2, GL_TEXTURE_2D, gAlbedoSpec, 0);
-    // tell OpenGL which color attachments we'll use (of this framebuffer) for rendering
-    unsigned int attachments[3] = { GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1, GL_COLOR_ATTACHMENT2 };
-    glDrawBuffers(3, attachments);
-    // create and attach depth buffer (renderbuffer)
-    unsigned int rboDepth;
-    glGenRenderbuffers(1, &rboDepth);
-    glBindRenderbuffer(GL_RENDERBUFFER, rboDepth);
-    glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT, SCR_WIDTH, SCR_HEIGHT);
-    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, rboDepth);
-    // finally check if framebuffer is complete
-    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
-        std::cout << "Framebuffer not complete!" << std::endl;
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
     shaderLightingPass.use();
     shaderLightingPass.setInt("gPosition", 0);
     shaderLightingPass.setInt("gNormal", 1);
     shaderLightingPass.setInt("gAlbedoSpec", 2);
 
+    // ostale konfiguracije i inicijalizacije
+    glm::vec3 lightPos(-5.0f, 4.0f, -5.0f); // pozicija point lighta
+    glm::mat4 model = glm::mat4(1.0f);
+
+    // svetla na banderama
     const unsigned int NR_LIGHTS = 10;
     std::vector<glm::vec3> lightPositions;
     std::vector<glm::vec3> lightColors;
@@ -322,7 +276,6 @@ int main() {
         programState->camera.Front = glm::vec3(0.0f, 0.0f, -1.0f);
         programState->camera.Up = glm::vec3(0.0f, 1.0f, 0.0f);
     }
-
 
     // render loop
     while (!glfwWindowShouldClose(window)) {
@@ -352,6 +305,7 @@ int main() {
             programState->introComplete = true;
         }
 
+        // ovo je intro render dok se "vozimo kolima"
         if(!programState->introComplete) {
             // 1. geometry pass: render scene's geometry/color data into gbuffer
             // -----------------------------------------------------------------
@@ -442,15 +396,10 @@ int main() {
             // finally render quad
             renderQuad();
 
-            // 2.5. copy content of geometry's depth buffer to default framebuffer's depth buffer
-            // ----------------------------------------------------------------------------------
+            // copy content of geometry's depth buffer to default framebuffer's depth buffer
             glBindFramebuffer(GL_READ_FRAMEBUFFER, gBuffer);
-            glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0); // write to default framebuffer
-            // blit to default framebuffer. Note that this may or may not work as the internal formats of both the FBO and default framebuffer have to match.
-            // the internal formats are implementation defined. This works on all of my systems, but if it doesn't on yours you'll likely have to write to the
-            // depth buffer in another shader stage (or somehow see to match the default framebuffer's internal format with the FBO's internal format).
-            glBlitFramebuffer(0, 0, SCR_WIDTH, SCR_HEIGHT, 0, 0, SCR_WIDTH, SCR_HEIGHT, GL_DEPTH_BUFFER_BIT,
-                              GL_NEAREST);
+            glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
+            glBlitFramebuffer(0, 0, SCR_WIDTH, SCR_HEIGHT, 0, 0, SCR_WIDTH, SCR_HEIGHT, GL_DEPTH_BUFFER_BIT, GL_NEAREST);
             glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
             // 3. render lights on top of scene
@@ -467,74 +416,6 @@ int main() {
                 renderCube();
             }
         }
-
-
-//        // renderovanje scene iz pozicije svetla
-//        // -------------------------------------------
-//        glBindFramebuffer(GL_FRAMEBUFFER, framebuffer);
-//        glClearColor(FLT_MAX, FLT_MAX, FLT_MAX, FLT_MAX);
-//
-//        float near_plane = 1.0f;
-//        float far_plane  = 25.0f;
-//        glm::mat4 shadowProj = glm::perspective(glm::radians(90.0f), (float)SHADOW_WIDTH / (float)SHADOW_HEIGHT, near_plane, far_plane);
-//        std::vector<glm::mat4> shadowTransforms;
-//        shadowTransforms.push_back(shadowProj * glm::lookAt(lightPos, lightPos + glm::vec3( 1.0f,  0.0f,  0.0f), glm::vec3(0.0f, -1.0f,  0.0f)));
-//        shadowTransforms.push_back(shadowProj * glm::lookAt(lightPos, lightPos + glm::vec3(-1.0f,  0.0f,  0.0f), glm::vec3(0.0f, -1.0f,  0.0f)));
-//        shadowTransforms.push_back(shadowProj * glm::lookAt(lightPos, lightPos + glm::vec3( 0.0f,  1.0f,  0.0f), glm::vec3(0.0f,  0.0f,  1.0f)));
-//        shadowTransforms.push_back(shadowProj * glm::lookAt(lightPos, lightPos + glm::vec3( 0.0f, -1.0f,  0.0f), glm::vec3(0.0f,  0.0f, -1.0f)));
-//        shadowTransforms.push_back(shadowProj * glm::lookAt(lightPos, lightPos + glm::vec3( 0.0f,  0.0f,  1.0f), glm::vec3(0.0f, -1.0f,  0.0f)));
-//        shadowTransforms.push_back(shadowProj * glm::lookAt(lightPos, lightPos + glm::vec3( 0.0f,  0.0f, -1.0f), glm::vec3(0.0f, -1.0f,  0.0f)));
-//
-//        glViewport(0, 0, SHADOW_WIDTH, SHADOW_HEIGHT);
-//        glBindFramebuffer(GL_FRAMEBUFFER, depthMapFBO);
-//            glClear(GL_DEPTH_BUFFER_BIT);
-//
-//            simpleDepthShader.use();
-//            for(unsigned int i = 0; i < 6; i++)
-//                simpleDepthShader.setMat4("shadowMatrices[" + std::to_string((i)) +"]", shadowTransforms[i]);
-//            simpleDepthShader.setFloat("far_plane", far_plane);
-//            simpleDepthShader.setVec3("lightPos", lightPos);
-//
-//            // renderovanje ranca:
-//            model = glm::mat4(1.0f);
-//            model = glm::translate(model,programState->tempPosition);
-//            model = glm::scale(model, glm::vec3(programState->tempScale));
-//            simpleDepthShader.setMat4("model", model);
-//            ourModel.Draw(simpleDepthShader);
-//
-//
-//            //renderovanje lampe
-//            for(int i = 0; i < 5; i++) {
-//                model = glm::mat4(1.0f);
-//                model = glm::translate(model, glm::vec3(-4.0f, 0.0f, i * 4.0f));
-//                model = glm::scale(model, glm::vec3(0.4f));
-//                model = glm::rotate(model, glm::radians(programState->tempRotation), glm::vec3(0, 1, 0));
-//                simpleDepthShader.setMat4("model", model);
-//                ulicnaSvetiljkaModel.Draw(simpleDepthShader);
-//            }
-//
-//            //podloga
-//
-//            glActiveTexture(GL_TEXTURE0);
-//            glBindTexture(GL_TEXTURE_2D, podlogaDiffuseMap);
-//            glActiveTexture(GL_TEXTURE1);
-//            glBindTexture(GL_TEXTURE_2D, podlogaSpecularMap);
-//
-//            model = glm::mat4(1.0f);
-//            simpleDepthShader.setMat4("model", model);
-//
-//            //za blinfonga treba shinnes 4* veci al trava ne sme da se presijava bas tako da tu treba obratiti paznju
-//            //simpleDepthShader.setFloat("material.shininess", 32.0f);
-//            glBindVertexArray(podlogaVAO);
-//            glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
-//
-//        glBindFramebuffer(GL_FRAMEBUFFER, 0);
-//        // -------------------------------------------
-//
-//        // render
-//
-//
-//        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
         if(programState->introComplete) {
             // ANTI-ALIASING: preusmeravamo renderovanje na nas framebuffer da bismo imali MSAA
@@ -592,8 +473,6 @@ int main() {
         objShader.setFloat("lampa.cutOff", glm::cos(glm::radians(10.0f)));
         objShader.setFloat("lampa.outerCutOff", glm::cos(glm::radians(15.0f)));
 
-//        objShader.setFloat("far_plane", far_plane);
-
         // renderovanje ranca:
         model = glm::mat4(1.0f);
         model = glm::translate(model,programState->tempPosition);
@@ -611,7 +490,7 @@ int main() {
             model = glm::mat4(1.0f);
             model = glm::translate(model, glm::vec3(0.4f, 0.2f, 1.0f));
             model = glm::rotate(model, glm::radians(-90.0f), glm::vec3(0.0f, 1.0f, 0.0f));
-            model = glm::scale(model, glm::vec3(0.75f));
+            model = glm::scale(model, glm::vec3(0.85f));
             objShader.setMat4("model", model);
             carModel.Draw(objShader);
         }
@@ -638,7 +517,6 @@ int main() {
         model = glm::scale(model, glm::vec3(0.3));
         objShader.setMat4("model", model);
         cottageHouseModel.Draw(objShader);
-
 
         glBindVertexArray(tallgrassVAO);
         glBindTexture(GL_TEXTURE_2D, tallgrassTexture);
@@ -693,6 +571,8 @@ int main() {
             model = glm::mat4(1.0f);
             objShader.setMat4("model", model);
 
+            //za blinfonga treba shinnes 4* veci al trava ne sme da se presijava bas tako da tu treba obratiti paznju
+            //objShader.setFloat("material.shininess", 32.0f);
             glBindVertexArray(podlogaVAO);
             glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
         }
@@ -718,7 +598,7 @@ int main() {
         glDepthMask(GL_TRUE);
         glDepthFunc(GL_LESS); // set depth function back to default
 
-
+        
         if(programState->introComplete) {
             // ANTI-ALIASING: ukljucivanje
             // *************************************************************************************************************
@@ -739,8 +619,6 @@ int main() {
             glDrawArrays(GL_TRIANGLES, 0, 6);
             // *************************************************************************************************************
         }
-
-        std::cerr << "Intro " << (programState->introComplete ? "" : "in") << "complete\n";
 
         if (programState->ImGuiEnabled)
             DrawImGui(programState);
