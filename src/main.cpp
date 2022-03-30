@@ -25,6 +25,9 @@ void processInput(GLFWwindow *window);
 // settings
 const unsigned int SCR_WIDTH = 1200;
 const unsigned int SCR_HEIGHT = 900;
+bool hdr = true;
+bool hdrKeyPressed = false;
+float exposure = 1.0f;
 
 // camera
 float lastX = SCR_WIDTH / 2.0f;
@@ -163,6 +166,7 @@ int main() {
     Shader objShader("resources/shaders/objectShader.vs", "resources/shaders/objectShader.fs");
     Shader screenShader("resources/shaders/anti-aliasing.vs", "resources/shaders/anti-aliasing.fs");    // za ANTI-ALIASING
     Shader skyboxShader("resources/shaders/skybox.vs", "resources/shaders/skybox.fs");
+    Shader hdrShader("resources/shaders/hdr.vs", "resources/shaders/hdr.fs");
 
     Shader shaderGeometryPass("resources/shaders/gBuffer.vs", "resources/shaders/gBuffer.fs");
     Shader shaderLightingPass("resources/shaders/deferredShadingLightingPassShader.vs", "resources/shaders/deferredShadingLigthingPassShader.fs");
@@ -394,9 +398,32 @@ int main() {
 
     if(glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
         std::cerr << "setupAntiAliasing::ERROR::FRAMEBUFFER Framebuffer is not complete!\n";
-
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
-    
+  
+    // ------------------------------------------------------------------------------------------------------------------------
+    //HDR
+    unsigned int hdrFBO;
+    glGenFramebuffers(1, &hdrFBO);
+    // create floating point color buffer
+    unsigned int colorBuffer;
+    glGenTextures(1, &colorBuffer);
+    glBindTexture(GL_TEXTURE_2D, colorBuffer);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F, SCR_WIDTH, SCR_HEIGHT, 0, GL_RGBA, GL_FLOAT, NULL);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    // create depth buffer (renderbuffer)
+    unsigned int rboDepth;
+    glGenRenderbuffers(1, &rboDepth);
+    glBindRenderbuffer(GL_RENDERBUFFER, rboDepth);
+    glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT, SCR_WIDTH, SCR_HEIGHT);
+    // attach buffers
+    glBindFramebuffer(GL_FRAMEBUFFER, hdrFBO);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, colorBuffer, 0);
+    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, rboDepth);
+    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
+        std::cout << "Framebuffer not complete!" << std::endl;
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    //---------------------------------------------
 
     // configure g-buffer framebuffer
     unsigned int gBuffer;
@@ -447,6 +474,9 @@ int main() {
     objShader.use();
     objShader.setInt("material.texture_diffuse1", 0);
     objShader.setInt("material.texture_specular1", 1);
+
+    hdrShader.use();
+    hdrShader.setInt("hdrBuffer", 0);
 
     shaderLightingPass.use();
     shaderLightingPass.setInt("gPosition", 0);
@@ -617,16 +647,24 @@ int main() {
                 shaderLightBox.setVec3("lightColor", lightColors[i]);
                 renderCube();
             }
-        }
+        }  
 
         if(programState->introComplete) {
-            // ANTI-ALIASING: preusmeravamo renderovanje na nas framebuffer da bismo imali MSAA
-            // *************************************************************************************************************
-            glBindFramebuffer(GL_FRAMEBUFFER, framebuffer);
-            glClearColor(programState->clearColor.r, programState->clearColor.g, programState->clearColor.b, 1.0f);
-            glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-            glEnable(GL_DEPTH_TEST);
-            // *************************************************************************************************************
+          // ANTI-ALIASING postaje HDR
+          // *************************************************************************************************************
+          //glBindFramebuffer(GL_FRAMEBUFFER, framebuffer);
+          glBindFramebuffer(GL_FRAMEBUFFER, hdrFBO);
+          glClearColor(programState->clearColor.r, programState->clearColor.g, programState->clearColor.b, 1.0f);
+          glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+          glEnable(GL_DEPTH_TEST);
+          // *************************************************************************************************************
+//             // ANTI-ALIASING: preusmeravamo renderovanje na nas framebuffer da bismo imali MSAA
+//             // *************************************************************************************************************
+//             glBindFramebuffer(GL_FRAMEBUFFER, framebuffer);
+//             glClearColor(programState->clearColor.r, programState->clearColor.g, programState->clearColor.b, 1.0f);
+//             glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+//             glEnable(GL_DEPTH_TEST);
+//             // *************************************************************************************************************
         }
 
         //object shader
@@ -645,9 +683,8 @@ int main() {
         // directional light
         objShader.setVec3("dirLight.direction", -0.2f, -1.0f, -0.3f);
         objShader.setVec3("dirLight.ambient", glm::vec3(programState->whiteAmbientLightStrength));
-        objShader.setVec3("dirLight.diffuse", 0.05f, 0.05f, 0.05);
+        objShader.setVec3("dirLight.diffuse", 0.05f, 0.05f, 0.05);   //privremeno samo za hdr
         objShader.setVec3("dirLight.specular", 0.2f, 0.2f, 0.2f);
-
 
         objShader.setVec3("pointLight.position", lightPos);
         objShader.setVec3("pointLight.ambient", glm::vec3(1.0f));
@@ -662,7 +699,7 @@ int main() {
         objShader.setVec3("lampa.direction", programState->camera.Front);
         objShader.setVec3("lampa.ambient", 0.0f, 0.0f, 0.0f);
         if(programState->spotlight) {
-            objShader.setVec3("lampa.diffuse", 1.0f, 1.0f, 1.0f);
+            objShader.setVec3("lampa.diffuse", 5.0f, 5.0f, 5.0f);
             objShader.setVec3("lampa.specular", 1.0f, 1.0f, 1.0f);
         }
         else {
@@ -802,15 +839,36 @@ int main() {
 
         
         if(programState->introComplete) {
+//             // ANTI-ALIASING: ukljucivanje
+//             // *************************************************************************************************************
+//             glBindFramebuffer(GL_FRAMEBUFFER, 0);
+//             glClearColor(programState->clearColor.r, programState->clearColor.g, programState->clearColor.b, 1.0f);
+//             glClear(GL_COLOR_BUFFER_BIT);
+//             glDisable(GL_DEPTH_TEST);
+
+
             // ANTI-ALIASING: ukljucivanje
-            // *************************************************************************************************************
+            // ****************************************************************************************************
+            glBindFramebuffer(GL_FRAMEBUFFER, framebuffer);
+            glClearColor(programState->clearColor.r, programState->clearColor.g, programState->clearColor.b, 1.0f);
+            glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+            hdrShader.use();
+            glActiveTexture(GL_TEXTURE0);
+            glBindTexture(GL_TEXTURE_2D, colorBuffer);
+            hdrShader.setInt("hdr", hdr);
+            hdrShader.setFloat("exposure", exposure);
+            renderQuad();
+
+            std::cout << "hdr: " << (hdr ? "on" : "off") << "| exposure: " << exposure << '\n';
+
             glBindFramebuffer(GL_FRAMEBUFFER, 0);
             glClearColor(programState->clearColor.r, programState->clearColor.g, programState->clearColor.b, 1.0f);
-            glClear(GL_COLOR_BUFFER_BIT);
-            glDisable(GL_DEPTH_TEST);
+            glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    //        glDisable(GL_DEPTH_TEST);
+
 
             screenShader.use();
-
             screenShader.setFloat("SCR_WIDTH", SCR_WIDTH);
             screenShader.setFloat("SCR_HEIGHT", SCR_HEIGHT);
             screenShader.setBool("grayscaleEnabled", programState->grayscaleEnabled);
@@ -846,11 +904,63 @@ int main() {
     return 0;
 }
 
+unsigned int quadVAO = 0;
+unsigned int quadVBO;
+void renderQuad()
+{
+    if (quadVAO == 0)
+    {
+        float quadVertices[] = {
+                // positions        // texture Coords
+                -1.0f,  1.0f, 0.0f, 0.0f, 1.0f,
+                -1.0f, -1.0f, 0.0f, 0.0f, 0.0f,
+                1.0f,  1.0f, 0.0f, 1.0f, 1.0f,
+                1.0f, -1.0f, 0.0f, 1.0f, 0.0f,
+        };
+        // setup plane VAO
+        glGenVertexArrays(1, &quadVAO);
+        glGenBuffers(1, &quadVBO);
+        glBindVertexArray(quadVAO);
+        glBindBuffer(GL_ARRAY_BUFFER, quadVBO);
+        glBufferData(GL_ARRAY_BUFFER, sizeof(quadVertices), &quadVertices, GL_STATIC_DRAW);
+        glEnableVertexAttribArray(0);
+        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)0);
+        glEnableVertexAttribArray(1);
+        glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)(3 * sizeof(float)));
+    }
+    glBindVertexArray(quadVAO);
+    glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+    glBindVertexArray(0);
+}
+
 // process all input: query GLFW whether relevant keys are pressed/released this frame and react accordingly
 // ---------------------------------------------------------------------------------------------------------
 void processInput(GLFWwindow *window) {
     if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
         glfwSetWindowShouldClose(window, true);
+  
+    if (glfwGetKey(window, GLFW_KEY_H) == GLFW_PRESS && !hdrKeyPressed)
+    {
+          hdr = !hdr;
+          hdrKeyPressed = true;
+    }
+    if (glfwGetKey(window, GLFW_KEY_H) == GLFW_RELEASE)
+    {
+          hdrKeyPressed = false;
+    }
+
+    if (glfwGetKey(window, GLFW_KEY_Q) == GLFW_PRESS)
+    {
+        if (exposure > 0.0f)
+             exposure -= 0.01f;
+        else
+            exposure = 0.0f;
+    }
+    else if (glfwGetKey(window, GLFW_KEY_E) == GLFW_PRESS)
+    {
+        exposure += 0.01f;
+    }
+
 
     if(programState->enabledKeyboardInput) {
         if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
@@ -865,6 +975,7 @@ void processInput(GLFWwindow *window) {
             programState->camera.ProcessKeyboard(DOWN, deltaTime);
         if (glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS)
             programState->camera.ProcessKeyboard(UP, deltaTime);
+
     }
 }
 
@@ -948,7 +1059,6 @@ void key_callback(GLFWwindow *window, int key, int scancode, int action, int mod
     if (key == GLFW_KEY_K && action == GLFW_PRESS) {
         programState->spotlight = !programState->spotlight;
     }
-
 }
 
 void DrawImGui(ProgramState *programState) {
@@ -1010,7 +1120,7 @@ glm::mat4 CalcFlashlightPosition() {
     Camera c = programState->camera;
 
     glm::mat4 model = glm::mat4(1.0f);
-    model = glm::translate(model, c.Position + 0.35f * c.Front + 0.07f * c.Right - 0.08f * c.Up);
+    model = glm::translate(model, c.Position + 0.35f * c.Front + 0.07f * c.Right - 0.12f * c.Up);
 
     model = glm::rotate(model, -glm::radians(c.Yaw + 180), c.Up);
     model = glm::rotate(model, glm::radians(c.Pitch), c.Right);
