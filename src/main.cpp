@@ -166,9 +166,9 @@ int main() {
     Shader simpleDepthShader("resources/shaders/depthShader.vs", "resources/shaders/depthShader.fs", "resources/shaders/depthShader.gs");
     Shader skyboxShader("resources/shaders/skybox.vs", "resources/shaders/skybox.fs");
 
-    Shader shaderGeometryPass("resources/shaders/8.1.g_buffer.vs", "resources/shaders/8.1.g_buffer.fs");
-    Shader shaderLightingPass("resources/shaders/8.1.deferred_shading.vs", "resources/shaders/8.1.deferred_shading.fs");
-    Shader shaderLightBox("resources/shaders/8.1.deferred_light_box.vs", "resources/shaders/8.1.deferred_light_box.fs");
+    Shader shaderGeometryPass("resources/shaders/gGuffer.vs", "resources/shaders/gBuffer.fs");
+    Shader shaderLightingPass("resources/shaders/deferredShadingLightingPassShader.vs", "resources/shaders/deferredShadingLigthingPassShader.fs");
+    Shader shaderLightBox("resources/shaders/deferredLightShow.vs", "resources/shaders/deferredLightShow.fs");
     
 
     // load models
@@ -197,6 +197,10 @@ int main() {
     Model roadStopModel("resources/objects/ograda/rust_fence.obj");
     roadStopModel.SetShaderTextureNamePrefix("material.");
 
+    stbi_set_flip_vertically_on_load(false);
+    Model carModel("resources/objects/car/LowPolyCars.obj");
+    carModel.SetShaderTextureNamePrefix("material.");
+    stbi_set_flip_vertically_on_load(true);
 
     //podloga
     unsigned int podlogaVAO = setupFloorPlane();
@@ -337,12 +341,14 @@ int main() {
 
         if(programState->introComplete == false)
         {
-            programState->camera.Position.z -= 5.0f * deltaTime;
+            // intro speed
+            programState->camera.Position.z -= 15.0f * deltaTime;
         }
 
         if(programState->introComplete == false && programState->camera.Position.z < 0) {
             programState->enabledKeyboardInput = true;
             programState->enabledMouseInput = true;
+            programState->camera.Position.x = -1.5f;
             programState->introComplete = true;
         }
 
@@ -600,6 +606,14 @@ int main() {
             model = CalcFlashlightPosition();
             objShader.setMat4("model", model);
             flashlightModel.Draw(objShader);
+
+            // renderovanje automobila:
+            model = glm::mat4(1.0f);
+            model = glm::translate(model, glm::vec3(0.4f, 0.2f, 1.0f));
+            model = glm::rotate(model, glm::radians(-90.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+            model = glm::scale(model, glm::vec3(0.75f));
+            objShader.setMat4("model", model);
+            carModel.Draw(objShader);
         }
 
         // renderovanje stop znaka:
@@ -675,14 +689,10 @@ int main() {
             glBindTexture(GL_TEXTURE_2D, podlogaDiffuseMap);
             glActiveTexture(GL_TEXTURE1);
             glBindTexture(GL_TEXTURE_2D, podlogaSpecularMap);
-            glActiveTexture(GL_TEXTURE2);
-            glBindTexture(GL_TEXTURE_CUBE_MAP, depthCubeMap);
 
             model = glm::mat4(1.0f);
             objShader.setMat4("model", model);
 
-            //za blinfonga treba shinnes 4* veci al trava ne sme da se presijava bas tako da tu treba obratiti paznju
-            //objShader.setFloat("material.shininess", 32.0f);
             glBindVertexArray(podlogaVAO);
             glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
         }
