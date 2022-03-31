@@ -421,9 +421,9 @@ int main() {
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, colorBuffer, 0);
     glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, rboDepth);
     if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
-        std::cout << "Framebuffer not complete!" << std::endl;
+        std::cerr << "setupHDR::ERROR::FRAMEBUFFER Framebuffer is not complete!" << std::endl;
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
-    //---------------------------------------------
+    //------------------------------------------------------------------------------------------------------------------------
 
     // configure g-buffer framebuffer
     unsigned int gBuffer;
@@ -463,7 +463,7 @@ int main() {
     glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, rboDepth2);
     // finally check if framebuffer is complete
     if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
-        std::cout << "Framebuffer not complete!" << std::endl;
+        std::cerr << "setupGBuffer::ERROR::FRAMEBUFFER Framebuffer is not complete!" << std::endl;
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
     
 
@@ -1092,11 +1092,10 @@ glm::mat4 CalcFlashlightPosition() {
     Camera c = programState->camera;
 
     glm::mat4 model = glm::mat4(1.0f);
-    model = glm::translate(model, c.Position + 0.35f * c.Front + 0.07f * c.Right - 0.12f * c.Up);
 
+    model = glm::translate(model, c.Position + 0.35f * c.Front + 0.07f * c.Right - 0.08f * c.Up);
     model = glm::rotate(model, -glm::radians(c.Yaw + 180), c.Up);
     model = glm::rotate(model, glm::radians(c.Pitch), c.Right);
-
     model = glm::scale(model, glm::vec3(0.025f));
 
     return model;
