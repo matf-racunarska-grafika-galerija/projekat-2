@@ -122,6 +122,7 @@ int main() {
         return -1;
     }
     glfwMakeContextCurrent(window);
+    //glfwSwapInterval( 0 );
     glfwSetWindowAspectRatio(window, 4, 3); // dozvoljava da prozor menja velicinu, ali cuva 4:3 odnos
 
     // glfw callbacks setup
@@ -171,7 +172,8 @@ int main() {
     Shader shaderGeometryPass("resources/shaders/gBuffer.vs", "resources/shaders/gBuffer.fs");
     Shader shaderLightingPass("resources/shaders/deferredShadingLightingPassShader.vs", "resources/shaders/deferredShadingLigthingPassShader.fs");
     Shader shaderLightBox("resources/shaders/deferredLightShow.vs", "resources/shaders/deferredLightShow.fs");
-    
+
+    Shader instancedGrass("resources/shaders/instancedGrass.vs", "resources/shaders/instancedGrass.fs");
 
     // load models
     Model ourModel("resources/objects/backpack/backpack.obj");
@@ -308,6 +310,23 @@ int main() {
     unsigned int cubeMapTexture;
     cubeMapTexture = loadCubeMap(faces);
 
+//-----------------------------------------------------------------------------------------------------------------------------------------------
+    unsigned int amount = 1000;
+    glm::vec3 translations[amount];
+    std::cerr << sizeof(translations) << endl;
+
+    srand(glfwGetTime());
+    glm::vec3 translation;
+    translation.y = 0.5f;
+    for(int i = 0; i < amount; i++)
+    {
+        translation.x = float(rand() % 220) - 110.0f + sinf(rand()) * 10.0f;
+        if(translation.x > -4.0f && translation.x < 2.0f)
+            translation.x += 7.0f;
+        translation.z = float(rand() % 220) - 110.0f + cosf(rand()) * 10.0f;
+        translations[i] = translation;
+    }
+
     // uspravna trava
     float tallgrassVertices[] = {
             // positions                    // normals                        // texture Coords
@@ -319,6 +338,12 @@ int main() {
             1.0f,  0.5f,  0.0f, 0.0f, 0.0f, 1.0f,  1.0f,  1.0f,
             1.0f, -0.5f,  0.0f, 0.0f, 0.0f, 1.0f,  1.0f,  0.0f
     };
+
+    unsigned int instanceVBO;
+    glGenBuffers(1, &instanceVBO);
+    glBindBuffer(GL_ARRAY_BUFFER, instanceVBO);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(glm::vec3) * amount, &translations[0], GL_STATIC_DRAW);
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
 
     // tallgrass VAO for grass
     unsigned int tallgrassVAO, tallgrassVBO;
@@ -333,18 +358,12 @@ int main() {
     glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)(3 * sizeof(float)));
     glEnableVertexAttribArray(2);
     glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)(6 * sizeof(float)));
-    glBindVertexArray(0);
-    vector<glm::vec3> vegetation
-        {
-            glm::vec3(-1.5f, 0.5f, -0.48f),
-            glm::vec3( 1.5f, 0.5f, 0.51f),
-            glm::vec3( 0.0f, 0.5f, 0.7f),
-            glm::vec3(-0.7f, 0.5f, -2.3f),
-            glm::vec3 (1.0f, 0.5f, -1.2f),
-            glm::vec3 (-0.1f, 0.5f, -0.63f),
-            glm::vec3 (-1.75f, 0.5f, 1.0f),
-            glm::vec3 (-0.6f, 0.5f, -2.0f)
-        };
+    // set instance data
+    glEnableVertexAttribArray(3);
+    glBindBuffer(GL_ARRAY_BUFFER, instanceVBO); // this attribute comes from a different vertex buffer
+    glVertexAttribPointer(3, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0);
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    glVertexAttribDivisor(3, 1); // tell OpenGL this is an instanced vertex attribute.
 
     // load textures
     unsigned int podlogaDiffuseMap = TextureFromFile("grass_diffuse.png", "resources/textures");
@@ -352,7 +371,6 @@ int main() {
     unsigned int tallgrassTexture = TextureFromFile("grass.png", "resources/textures/");
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-
 
     // ANTI-ALIASING
     float quadVertices[] = {
@@ -367,7 +385,6 @@ int main() {
     };
 
     unsigned int quadVAO, quadVBO;
-
     glGenVertexArrays(1, &quadVAO);
     glGenBuffers(1, &quadVBO);
     glBindVertexArray(quadVAO);
@@ -674,7 +691,7 @@ int main() {
 
         // view/projection transformations
         glm::mat4 projection = glm::perspective(glm::radians(programState->camera.Zoom),
-                                                (float) SCR_WIDTH / (float) SCR_HEIGHT, 0.1f, 100.0f);
+                                                (float) SCR_WIDTH / (float) SCR_HEIGHT, 0.1f, 1000.0f);
         glm::mat4 view = programState->camera.GetViewMatrix();
         objShader.setMat4("projection", projection);
         objShader.setMat4("view", view);
@@ -757,19 +774,6 @@ int main() {
         objShader.setMat4("model", model);
         cottageHouseModel.Draw(objShader);
 
-        glBindVertexArray(tallgrassVAO);
-        glBindTexture(GL_TEXTURE_2D, tallgrassTexture);
-        for (unsigned int i = 0; i < vegetation.size(); i++)
-        {
-            model = glm::mat4(1.0f);
-            model = glm::translate(model, vegetation[i]);
-            //model = glm::rotate(model, (float)i*60.0f, glm::vec3(0.0, 0.1, 0.0));
-            objShader.setMat4("model", model);
-            objShader.setMat4("projection", projection);
-            objShader.setMat4("view", view);
-            glDrawArrays(GL_TRIANGLES, 0, 6);
-        }
-
         if(programState->introComplete) {
             // renderovanje ulice
             model = glm::mat4(1.0f);
@@ -815,6 +819,21 @@ int main() {
             glBindVertexArray(podlogaVAO);
             glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
         }
+
+        instancedGrass.use();
+        instancedGrass.setVec3("dirLight.direction", -0.2f, -1.0f, -0.3f);
+        instancedGrass.setVec3("dirLight.ambient", glm::vec3(programState->whiteAmbientLightStrength));
+        instancedGrass.setVec3("dirLight.diffuse", 0.05f, 0.05f, 0.05);   //privremeno samo za hdr
+        instancedGrass.setVec3("dirLight.specular", 0.2f, 0.2f, 0.2f);
+        instancedGrass.setInt("texture_diffuse1", 0);
+        instancedGrass.setMat4("projection", projection);
+        instancedGrass.setMat4("view", view);
+        glBindVertexArray(tallgrassVAO);
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, tallgrassTexture);
+        glDrawArraysInstanced(GL_TRIANGLES, 0, 6, amount);
+        glBindVertexArray(0);
+
         glEnable(GL_CULL_FACE);
 
 
@@ -860,7 +879,7 @@ int main() {
             hdrShader.setFloat("exposure", exposure);
             renderQuad();
 
-            std::cout << "hdr: " << (hdr ? "on" : "off") << "| exposure: " << exposure << '\n';
+            //std::cout << "hdr: " << (hdr ? "on" : "off") << "| exposure: " << exposure << '\n';
 
             glBindFramebuffer(GL_FRAMEBUFFER, 0);
             glClearColor(programState->clearColor.r, programState->clearColor.g, programState->clearColor.b, 1.0f);
@@ -1063,6 +1082,7 @@ void DrawImGui(ProgramState *programState) {
         ImGui::Text("Reset camera position: P");
         ImGui::Bullet();
         ImGui::Text("Toggle camera spotlight on/off: K");
+        ImGui::DragFloat("Camera Movement Speed", (float *) &programState->camera.MovementSpeed, 0.5f, 2.5f, 100.0f);
         ImGui::End();
     }
 
