@@ -14,10 +14,13 @@
 #include <learnopengl/camera.h>
 #include <learnopengl/model.h>
 
+#include <rg/setup.h>
+
 #include <iostream>
 
 void framebuffer_size_callback(GLFWwindow *window, int width, int height);
 void mouse_callback(GLFWwindow *window, double xpos, double ypos);
+void mouse_button_callback(GLFWwindow* window, int button, int action, int mods);
 void scroll_callback(GLFWwindow *window, double xoffset, double yoffset);
 void key_callback(GLFWwindow *window, int key, int scancode, int action, int mods);
 void processInput(GLFWwindow *window);
@@ -37,6 +40,14 @@ bool firstMouse = true;
 // timing
 float deltaTime = 0.0f;
 float lastFrame = 0.0f;
+float pulseCycleTime = 0.4f;
+float pulseAccTime = 0.0f;
+std::vector<float> flickerMode(4);
+float flickerAccTime = 0.0f;
+float flickerCycleTime = 1.0f;
+int mode = 0;
+
+void updateFlickering();
 
 struct ProgramState {
     glm::vec3 clearColor = glm::vec3(0);
@@ -52,7 +63,7 @@ struct ProgramState {
     bool enabledMouseInput = false;
 
     ProgramState()
-            : camera(glm::vec3((-0.8f, 1.0f, 120.0f))) {}
+            : camera(glm::vec3((-0.8f, 1.0f, 150.0f))) {}
 
     void SaveToFile(std::string filename);
     void LoadFromFile(std::string filename);
@@ -130,6 +141,7 @@ int main() {
     glfwSetCursorPosCallback(window, mouse_callback);
     glfwSetScrollCallback(window, scroll_callback);
     glfwSetKeyCallback(window, key_callback);
+    glfwSetMouseButtonCallback(window, mouse_button_callback);
 
     // tell GLFW to capture our mouse
     glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
@@ -165,35 +177,23 @@ int main() {
 
     // build and compile shaders
     Shader objShader("resources/shaders/objectShader.vs", "resources/shaders/objectShader.fs");
-    Shader screenShader("resources/shaders/anti-aliasing.vs", "resources/shaders/anti-aliasing.fs");    // za ANTI-ALIASING
+    Shader screenShader("resources/shaders/anti-aliasing.vs", "resources/shaders/anti-aliasing.fs");
     Shader skyboxShader("resources/shaders/skybox.vs", "resources/shaders/skybox.fs");
     Shader hdrShader("resources/shaders/hdr.vs", "resources/shaders/hdr.fs");
-
     Shader shaderGeometryPass("resources/shaders/gBuffer.vs", "resources/shaders/gBuffer.fs");
     Shader shaderLightingPass("resources/shaders/deferredShadingLightingPassShader.vs", "resources/shaders/deferredShadingLigthingPassShader.fs");
     Shader shaderLightBox("resources/shaders/deferredLightShow.vs", "resources/shaders/deferredLightShow.fs");
-
     Shader instancedGrass("resources/shaders/instancedGrass.vs", "resources/shaders/instancedGrass.fs");
 
     // load models
     Model ourModel("resources/objects/backpack/backpack.obj");
     ourModel.SetShaderTextureNamePrefix("material.");
-    Model ulicnaSvetiljkaModel("resources/objects/Street Lamp2/StreetLamp.obj");
-    //ulicnaSvetiljkaModel.SetShaderTextureNamePrefix("material.");
 
-    // iz nekog razloga mora da se obrne tekstura
-    stbi_set_flip_vertically_on_load(false);
-    Model flashlightModel("resources/objects/flashlight/flashlight.obj");
-    flashlightModel.SetShaderTextureNamePrefix("material.");
-    stbi_set_flip_vertically_on_load(true);
+    Model ulicnaSvetiljkaModel("resources/objects/Street Lamp2/StreetLamp.obj");
+    ulicnaSvetiljkaModel.SetShaderTextureNamePrefix("material.");
 
     Model houseModel("resources/objects/House/House.obj");
     houseModel.SetShaderTextureNamePrefix("material.");
-
-    stbi_set_flip_vertically_on_load(false);
-    Model cottageHouseModel("resources/objects/cottage_house/cottage_blender.obj");
-    cottageHouseModel.SetShaderTextureNamePrefix("material.");
-    stbi_set_flip_vertically_on_load(true);
 
     Model roadModel("resources/objects/road/road.obj");
     roadModel.SetShaderTextureNamePrefix("material.");
@@ -201,169 +201,33 @@ int main() {
     Model roadStopModel("resources/objects/ograda/rust_fence.obj");
     roadStopModel.SetShaderTextureNamePrefix("material.");
 
+    // iz nekog razloga mora da se obrne tekstura
     stbi_set_flip_vertically_on_load(false);
+
+    Model flashlightModel("resources/objects/flashlight/flashlight.obj");
+    flashlightModel.SetShaderTextureNamePrefix("material.");
+
+    Model cottageHouseModel("resources/objects/cottage_house/cottage_blender.obj");
+    cottageHouseModel.SetShaderTextureNamePrefix("material.");
+
     Model carModel("resources/objects/car/LowPolyCars.obj");
     carModel.SetShaderTextureNamePrefix("material.");
+
     stbi_set_flip_vertically_on_load(true);
 
-    //podloga
-    float podlogaVertices[] = {
-            // positions                           // normals                     // texture coords
-            200.0f,  0.0f, -200.0f, 0.0f, 1.0f, 0.0f,   200.0f, 200.0f, // top right
-            200.0f, 0.0f, 200.0f, 0.0f, 1.0f, 0.0f,  200.0f, 0.0f, // bottom right
-            -200.0f, 0.0f, 200.0f,  0.0f, 1.0f, 0.0f, 0.0f, 0.0f, // bottom left
-            -200.0f,  0.0f, -200.0f, 0.0f, 1.0f, 0.0f,  0.0f, 200.0f  // top left
-    };
-    unsigned int podlogaIndices[] = {
-            0, 1, 3, // first triangle
-            1, 2, 3  // second triangle
-    };
-
-    unsigned int podlogaVBO, podlogaVAO, podlogaEBO;
-    glGenVertexArrays(1, &podlogaVAO);
-    glGenBuffers(1, &podlogaVBO);
-    glGenBuffers(1, &podlogaEBO);
-
-    glBindVertexArray(podlogaVAO);
-
-    glBindBuffer(GL_ARRAY_BUFFER, podlogaVBO);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(podlogaVertices), podlogaVertices, GL_STATIC_DRAW);
-
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, podlogaEBO);
-    glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(podlogaIndices), podlogaIndices, GL_STATIC_DRAW);
-
-    // position attribute
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)0);
-    glEnableVertexAttribArray(0);
-    // normale coord attribute
-    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)(3 * sizeof(float)));
-    glEnableVertexAttribArray(1);
-    //texture
-    glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)(6 * sizeof(float)));
-    glEnableVertexAttribArray(2);
-
-    // skybox
-    float skyboxVertices[] = {
-            // positions
-            -1.0f,  1.0f, -1.0f,
-            -1.0f, -1.0f, -1.0f,
-            1.0f, -1.0f, -1.0f,
-            1.0f, -1.0f, -1.0f,
-            1.0f,  1.0f, -1.0f,
-            -1.0f,  1.0f, -1.0f,
-
-            -1.0f, -1.0f,  1.0f,
-            -1.0f, -1.0f, -1.0f,
-            -1.0f,  1.0f, -1.0f,
-            -1.0f,  1.0f, -1.0f,
-            -1.0f,  1.0f,  1.0f,
-            -1.0f, -1.0f,  1.0f,
-
-            1.0f, -1.0f, -1.0f,
-            1.0f, -1.0f,  1.0f,
-            1.0f,  1.0f,  1.0f,
-            1.0f,  1.0f,  1.0f,
-            1.0f,  1.0f, -1.0f,
-            1.0f, -1.0f, -1.0f,
-
-            -1.0f, -1.0f,  1.0f,
-            -1.0f,  1.0f,  1.0f,
-            1.0f,  1.0f,  1.0f,
-            1.0f,  1.0f,  1.0f,
-            1.0f, -1.0f,  1.0f,
-            -1.0f, -1.0f,  1.0f,
-
-            -1.0f,  1.0f, -1.0f,
-            1.0f,  1.0f, -1.0f,
-            1.0f,  1.0f,  1.0f,
-            1.0f,  1.0f,  1.0f,
-            -1.0f,  1.0f,  1.0f,
-            -1.0f,  1.0f, -1.0f,
-
-            -1.0f, -1.0f, -1.0f,
-            -1.0f, -1.0f,  1.0f,
-            1.0f, -1.0f, -1.0f,
-            1.0f, -1.0f, -1.0f,
-            -1.0f, -1.0f,  1.0f,
-            1.0f, -1.0f,  1.0f
-    };
-
-    vector<std::string> faces
-            {
-                    FileSystem::getPath("resources/textures/skybox/front.png"),
-                    FileSystem::getPath("resources/textures/skybox/back.png"),
-                    FileSystem::getPath("resources/textures/skybox/top.png"),
-                    FileSystem::getPath("resources/textures/skybox/bottom.png"),
-                    FileSystem::getPath("resources/textures/skybox/left.png"),
-                    FileSystem::getPath("resources/textures/skybox/right.png")
-            };
-
-    unsigned int skyboxVAO, skyboxVBO;
-    glGenVertexArrays(1, &skyboxVAO);
-    glGenBuffers(1, &skyboxVBO);
-    glBindVertexArray(skyboxVAO);
-    glBindBuffer(GL_ARRAY_BUFFER, skyboxVBO);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(skyboxVertices), &skyboxVertices, GL_STATIC_DRAW);
-    glEnableVertexAttribArray(0);
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)nullptr);
+    unsigned int podlogaVAO =setupFloorPlane();
 
     unsigned int cubeMapTexture;
-    cubeMapTexture = loadCubeMap(faces);
+    unsigned int skyboxVAO = setupSkybox(cubeMapTexture);
 
-//-----------------------------------------------------------------------------------------------------------------------------------------------
-    unsigned int amount = 1000;
-    glm::vec3 translations[amount];
-    std::cerr << sizeof(translations) << endl;
+    unsigned int amount = 9001; // IT'S OVER 9000 !!!
+    unsigned int tallgrassVAO = setupTallGrass(amount);
 
-    srand(glfwGetTime());
-    glm::vec3 translation;
-    translation.y = 0.5f;
-    for(int i = 0; i < amount; i++)
-    {
-        translation.x = float(rand() % 220) - 110.0f + sinf(rand()) * 10.0f;
-        if(translation.x > -4.0f && translation.x < 2.0f)
-            translation.x += 7.0f;
-        translation.z = float(rand() % 220) - 110.0f + cosf(rand()) * 10.0f;
-        translations[i] = translation;
-    }
+    unsigned int framebuffer, textureColorBufferMultiSampled;
+    unsigned int screenVAO = setupAntiAliasing(framebuffer, textureColorBufferMultiSampled, SCR_WIDTH, SCR_HEIGHT);
 
-    // uspravna trava
-    float tallgrassVertices[] = {
-            // positions                    // normals                        // texture Coords
-            0.0f, -0.5f,  0.0f, 0.0f, 0.0f, 1.0f,  0.0f,  0.0f,
-            0.0f,  0.5f, 0.0f, 0.0f, 0.0f, 1.0f,  0.0f,  1.0f,
-            1.0f,  0.5f,0.0f, 0.0f, 0.0f, 1.0f, 1.0f,  1.0f,
-
-            0.0f, -0.5f,  0.0f, 0.0f, 0.0f, 1.0f,  0.0f,  0.0f,
-            1.0f,  0.5f,  0.0f, 0.0f, 0.0f, 1.0f,  1.0f,  1.0f,
-            1.0f, -0.5f,  0.0f, 0.0f, 0.0f, 1.0f,  1.0f,  0.0f
-    };
-
-    unsigned int instanceVBO;
-    glGenBuffers(1, &instanceVBO);
-    glBindBuffer(GL_ARRAY_BUFFER, instanceVBO);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(glm::vec3) * amount, &translations[0], GL_STATIC_DRAW);
-    glBindBuffer(GL_ARRAY_BUFFER, 0);
-
-    // tallgrass VAO for grass
-    unsigned int tallgrassVAO, tallgrassVBO;
-    glGenVertexArrays(1, &tallgrassVAO);
-    glGenBuffers(1, &tallgrassVBO);
-    glBindVertexArray(tallgrassVAO);
-    glBindBuffer(GL_ARRAY_BUFFER, tallgrassVBO);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(tallgrassVertices), tallgrassVertices, GL_STATIC_DRAW);
-    glEnableVertexAttribArray(0);
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)nullptr);
-    glEnableVertexAttribArray(1);
-    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)(3 * sizeof(float)));
-    glEnableVertexAttribArray(2);
-    glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)(6 * sizeof(float)));
-    // set instance data
-    glEnableVertexAttribArray(3);
-    glBindBuffer(GL_ARRAY_BUFFER, instanceVBO); // this attribute comes from a different vertex buffer
-    glVertexAttribPointer(3, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0);
-    glBindBuffer(GL_ARRAY_BUFFER, 0);
-    glVertexAttribDivisor(3, 1); // tell OpenGL this is an instanced vertex attribute.
+    unsigned int gPosition, gNormal, gAlbedoSpec;
+    unsigned int gBuffer = setupGBuffer(gPosition, gNormal, gAlbedoSpec, SCR_WIDTH, SCR_HEIGHT);
 
     // load textures
     unsigned int podlogaDiffuseMap = TextureFromFile("grass_diffuse.png", "resources/textures");
@@ -372,51 +236,7 @@ int main() {
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 
-    // ANTI-ALIASING
-    float quadVertices[] = {
-            // positions            // texCoords
-            -1.0f,  1.0f,  0.0f, 1.0f,
-            -1.0f, -1.0f,  0.0f, 0.0f,
-            1.0f, -1.0f,  1.0f, 0.0f,
 
-            -1.0f,  1.0f,  0.0f, 1.0f,
-            1.0f, -1.0f,  1.0f, 0.0f,
-            1.0f,  1.0f,  1.0f, 1.0f
-    };
-
-    unsigned int quadVAO, quadVBO;
-    glGenVertexArrays(1, &quadVAO);
-    glGenBuffers(1, &quadVBO);
-    glBindVertexArray(quadVAO);
-    glBindBuffer(GL_ARRAY_BUFFER, quadVBO);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(quadVertices), &quadVertices, GL_STATIC_DRAW);
-    glEnableVertexAttribArray(0);
-    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void*)0);
-    glEnableVertexAttribArray(1);
-    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void*)(2 * sizeof(float)));
-
-    unsigned int framebuffer;
-    glGenFramebuffers(1, &framebuffer);
-    glBindFramebuffer(GL_FRAMEBUFFER, framebuffer);
-
-    unsigned int textureColorBufferMultiSampled;
-    glGenTextures(1, &textureColorBufferMultiSampled);
-    glBindTexture(GL_TEXTURE_2D_MULTISAMPLE, textureColorBufferMultiSampled);
-    glTexImage2DMultisample(GL_TEXTURE_2D_MULTISAMPLE, 4, GL_RGB, SCR_WIDTH, SCR_HEIGHT, GL_TRUE);
-    glBindTexture(GL_TEXTURE_2D_MULTISAMPLE, 0);
-    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D_MULTISAMPLE, textureColorBufferMultiSampled, 0);
-
-    unsigned int rbo;
-    glGenRenderbuffers(1, &rbo);
-    glBindRenderbuffer(GL_RENDERBUFFER, rbo);
-    glRenderbufferStorageMultisample(GL_RENDERBUFFER, 4, GL_DEPTH24_STENCIL8, SCR_WIDTH, SCR_HEIGHT);
-    glBindRenderbuffer(GL_RENDERBUFFER, 0);
-    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_RENDERBUFFER, rbo);
-
-    if(glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
-        std::cerr << "setupAntiAliasing::ERROR::FRAMEBUFFER Framebuffer is not complete!\n";
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
-  
     // ------------------------------------------------------------------------------------------------------------------------
     //HDR
     unsigned int hdrFBO;
@@ -442,47 +262,6 @@ int main() {
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
     //------------------------------------------------------------------------------------------------------------------------
 
-    // configure g-buffer framebuffer
-    unsigned int gBuffer;
-    glGenFramebuffers(1, &gBuffer);
-    glBindFramebuffer(GL_FRAMEBUFFER, gBuffer);
-
-    unsigned int gPosition, gNormal, gAlbedoSpec;
-    // position color buffer
-    glGenTextures(1, &gPosition);
-    glBindTexture(GL_TEXTURE_2D, gPosition);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F, SCR_WIDTH, SCR_HEIGHT, 0, GL_RGBA, GL_FLOAT, NULL);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, gPosition, 0);
-    // normal color buffer
-    glGenTextures(1, &gNormal);
-    glBindTexture(GL_TEXTURE_2D, gNormal);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F, SCR_WIDTH, SCR_HEIGHT, 0, GL_RGBA, GL_FLOAT, NULL);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT1, GL_TEXTURE_2D, gNormal, 0);
-    // color + specular color buffer
-    glGenTextures(1, &gAlbedoSpec);
-    glBindTexture(GL_TEXTURE_2D, gAlbedoSpec);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, SCR_WIDTH, SCR_HEIGHT, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT2, GL_TEXTURE_2D, gAlbedoSpec, 0);
-    // tell OpenGL which color attachments we'll use (of this framebuffer) for rendering
-    unsigned int attachments[3] = { GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1, GL_COLOR_ATTACHMENT2 };
-    glDrawBuffers(3, attachments);
-    // create and attach depth buffer (renderbuffer)
-    unsigned int rboDepth2;
-    glGenRenderbuffers(1, &rboDepth2);
-    glBindRenderbuffer(GL_RENDERBUFFER, rboDepth2);
-    glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT, SCR_WIDTH, SCR_HEIGHT);
-    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, rboDepth2);
-    // finally check if framebuffer is complete
-    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
-        std::cerr << "setupGBuffer::ERROR::FRAMEBUFFER Framebuffer is not complete!" << std::endl;
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
-    
 
     // konfiguracija shadera
     screenShader.use();
@@ -503,25 +282,27 @@ int main() {
     // ostale konfiguracije i inicijalizacije
     glm::vec3 lightPos(-5.0f, 4.0f, -5.0f); // pozicija point lighta
     glm::mat4 model = glm::mat4(1.0f);
+    glm::mat4 projection;
+    glm::mat4 view;
 
     // svetla na banderama
-    const unsigned int NR_LIGHTS = 10;
+    const unsigned int NR_LIGHTS = 13;
     std::vector<glm::vec3> lightPositions;
     std::vector<glm::vec3> lightColors;
     srand(13);
     for (unsigned int i = 0; i < NR_LIGHTS; i++)
     {
         lightPositions.push_back(glm::vec3(-0.35f, 6.55f, i * 12.0f));
-        float rColor = ((rand() % 100) / 200.0f) + 0.1; // between 0.1 and 1.0
-        float gColor = ((rand() % 100) / 200.0f) + 0.1; // between 0.1 and 1.0
-        float bColor = ((rand() % 100) / 200.0f) + 0.1; // between 0.1 and 1.0
+        float rColor = ((rand() % 100) / 200.0f) + 0.1; // between 0.1 and 0.6
+        float gColor = ((rand() % 100) / 200.0f) + 0.1; // between 0.1 and 0.6
+        float bColor = ((rand() % 100) / 200.0f) + 0.1; // between 0.1 and 0.6
         lightColors.push_back(glm::vec3(rColor, gColor, bColor));
     }
 
     if(programState->introComplete == false) {
         programState->enabledKeyboardInput = false;
         programState->enabledMouseInput = false;
-        programState->camera.Position = glm::vec3(-0.8f, 1.0f, 120.0f);
+        programState->camera.Position = glm::vec3(-0.1f, 1.0f, 150.0f);
         programState->camera.Front = glm::vec3(0.0f, 0.0f, -1.0f);
         programState->camera.Up = glm::vec3(0.0f, 1.0f, 0.0f);
     }
@@ -529,9 +310,11 @@ int main() {
     // render loop
     while (!glfwWindowShouldClose(window)) {
         // per-frame time logic
-        float currentFrame = glfwGetTime();
+        float currentFrame = (float)glfwGetTime();
         deltaTime = currentFrame - lastFrame;
         lastFrame = currentFrame;
+
+        updateFlickering();  // racuna "treptanje" svetla prve bandere
 
         // input
         processInput(window);
@@ -560,14 +343,14 @@ int main() {
             // -----------------------------------------------------------------
             glBindFramebuffer(GL_FRAMEBUFFER, gBuffer);
             glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-            glm::mat4 projection = glm::perspective(glm::radians(programState->camera.Zoom),
+            projection = glm::perspective(glm::radians(programState->camera.Zoom),
                                                     (float) SCR_WIDTH / (float) SCR_HEIGHT, 0.1f, 100.0f);
-            glm::mat4 view = programState->camera.GetViewMatrix();
-            glm::mat4 model = glm::mat4(1.0f);
+            view = programState->camera.GetViewMatrix();
+            model = glm::mat4(1.0f);
             shaderGeometryPass.use();
             shaderGeometryPass.setMat4("projection", projection);
             shaderGeometryPass.setMat4("view", view);
-            for (unsigned int i = 0; i < 10; i++) {
+            for (unsigned int i = 0; i < NR_LIGHTS; i++) {
                 model = glm::mat4(1.0f);
                 model = glm::translate(model, glm::vec3(-4.0f, 0.0f, i * 12.0f));
                 model = glm::scale(model, glm::vec3(0.5f));
@@ -605,6 +388,11 @@ int main() {
             roadModel.Draw(shaderGeometryPass);
             model = glm::mat4(1.0f);
             model = glm::translate(model, glm::vec3(-0.2f, -1.0f, 106.04f));
+            model = glm::rotate(model, glm::radians(90.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+            shaderGeometryPass.setMat4("model", model);
+            roadModel.Draw(shaderGeometryPass);
+            model = glm::mat4(1.0f);
+            model = glm::translate(model, glm::vec3(-0.2f, -1.0f, 137.72f));
             model = glm::rotate(model, glm::radians(90.0f), glm::vec3(0.0f, 1.0f, 0.0f));
             shaderGeometryPass.setMat4("model", model);
             roadModel.Draw(shaderGeometryPass);
@@ -661,27 +449,19 @@ int main() {
                 model = glm::translate(model, lightPositions[i]);
                 model = glm::scale(model, glm::vec3(0.35f, 0.1f, 0.30f));
                 shaderLightBox.setMat4("model", model);
-                shaderLightBox.setVec3("lightColor", lightColors[i]);
+                shaderLightBox.setVec3("lightColor", sin((float) glfwGetTime() * lightColors[i]) / 2.0f + 0.5f);
                 renderCube();
             }
-        }  
+        }
 
         if(programState->introComplete) {
-          // ANTI-ALIASING postaje HDR
-          // *************************************************************************************************************
-          //glBindFramebuffer(GL_FRAMEBUFFER, framebuffer);
-          glBindFramebuffer(GL_FRAMEBUFFER, hdrFBO);
-          glClearColor(programState->clearColor.r, programState->clearColor.g, programState->clearColor.b, 1.0f);
-          glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-          glEnable(GL_DEPTH_TEST);
-          // *************************************************************************************************************
-//             // ANTI-ALIASING: preusmeravamo renderovanje na nas framebuffer da bismo imali MSAA
-//             // *************************************************************************************************************
-//             glBindFramebuffer(GL_FRAMEBUFFER, framebuffer);
-//             glClearColor(programState->clearColor.r, programState->clearColor.g, programState->clearColor.b, 1.0f);
-//             glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-//             glEnable(GL_DEPTH_TEST);
-//             // *************************************************************************************************************
+            // ANTI-ALIASING: preusmeravamo renderovanje na nas framebuffer da bismo imali MSAA
+            // *************************************************************************************************************
+            glBindFramebuffer(GL_FRAMEBUFFER, framebuffer);
+            glClearColor(programState->clearColor.r, programState->clearColor.g, programState->clearColor.b, 1.0f);
+            glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+            glEnable(GL_DEPTH_TEST);
+            // *************************************************************************************************************
         }
 
         //object shader
@@ -690,9 +470,9 @@ int main() {
         objShader.setFloat("material.shininess", 32.0f);
 
         // view/projection transformations
-        glm::mat4 projection = glm::perspective(glm::radians(programState->camera.Zoom),
+        projection = glm::perspective(glm::radians(programState->camera.Zoom),
                                                 (float) SCR_WIDTH / (float) SCR_HEIGHT, 0.1f, 1000.0f);
-        glm::mat4 view = programState->camera.GetViewMatrix();
+        view = programState->camera.GetViewMatrix();
         objShader.setMat4("projection", projection);
         objShader.setMat4("view", view);
 
@@ -729,6 +509,28 @@ int main() {
         objShader.setFloat("lampa.cutOff", glm::cos(glm::radians(10.0f)));
         objShader.setFloat("lampa.outerCutOff", glm::cos(glm::radians(15.0f)));
 
+        // flickering light
+        objShader.setVec3("flickeringLight.position", lightPositions[0]);
+        objShader.setVec3("flickeringLight.direction", glm::vec3(0.0f, -1.0f, 0.0f));
+        objShader.setVec3("flickeringLight.ambient", 0.0f, 0.0f, 0.0f);
+        objShader.setVec3("flickeringLight.diffuse",  flickerMode[mode] * glm::vec3(1.0f, 1.0f, 0.5f));
+        objShader.setVec3("flickeringLight.specular", 1.0f, 1.0f, 1.0f);
+        objShader.setFloat("flickeringLight.constant", 1.0f);
+        objShader.setFloat("flickeringLight.linear", 0.09f);
+        objShader.setFloat("flickeringLight.quadratic", 0.032f);
+        objShader.setFloat("flickeringLight.cutOff", glm::cos(glm::radians(15.0f)));
+        objShader.setFloat("flickeringLight.outerCutOff", glm::cos(glm::radians(30.0f)));
+        model = glm::mat4(1.0f);
+        model = glm::translate(model, lightPositions[0]);
+        model = glm::scale(model, glm::vec3(0.38f, 0.1f, 0.28f));
+        shaderLightBox.use();
+        shaderLightBox.setMat4("model", model);
+        shaderLightBox.setMat4("projection", projection);
+        shaderLightBox.setMat4("view", view);
+        shaderLightBox.setVec3("lightColor", flickerMode[mode] * glm::vec3(1.0f, 1.0f, 0.7f));
+        renderCube();
+
+        objShader.use();
         // renderovanje ranca:
         model = glm::mat4(1.0f);
         model = glm::translate(model,programState->tempPosition);
@@ -796,8 +598,13 @@ int main() {
             model = glm::rotate(model, glm::radians(90.0f), glm::vec3(0.0f, 1.0f, 0.0f));
             objShader.setMat4("model", model);
             roadModel.Draw(objShader);
+            model = glm::mat4(1.0f);
+            model = glm::translate(model, glm::vec3(-0.2f, -1.0f, 137.72f));
+            model = glm::rotate(model, glm::radians(90.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+            shaderGeometryPass.setMat4("model", model);
+            roadModel.Draw(shaderGeometryPass);
 
-            for (unsigned int i = 0; i < 10; i++) {
+            for (unsigned int i = 0; i < NR_LIGHTS; i++) {
                 model = glm::mat4(1.0f);
                 model = glm::translate(model, glm::vec3(-4.0f, 0.0f, i * 12.0f));
                 model = glm::scale(model, glm::vec3(0.5f));
@@ -823,7 +630,7 @@ int main() {
         instancedGrass.use();
         instancedGrass.setVec3("dirLight.direction", -0.2f, -1.0f, -0.3f);
         instancedGrass.setVec3("dirLight.ambient", glm::vec3(programState->whiteAmbientLightStrength));
-        instancedGrass.setVec3("dirLight.diffuse", 0.05f, 0.05f, 0.05);   //privremeno samo za hdr
+        instancedGrass.setVec3("dirLight.diffuse", 0.05f, 0.05f, 0.05);
         instancedGrass.setVec3("dirLight.specular", 0.2f, 0.2f, 0.2f);
         instancedGrass.setInt("texture_diffuse1", 0);
         instancedGrass.setMat4("projection", projection);
@@ -856,43 +663,22 @@ int main() {
         glDepthMask(GL_TRUE);
         glDepthFunc(GL_LESS); // set depth function back to default
 
-        
+
         if(programState->introComplete) {
-//             // ANTI-ALIASING: ukljucivanje
-//             // *************************************************************************************************************
-//             glBindFramebuffer(GL_FRAMEBUFFER, 0);
-//             glClearColor(programState->clearColor.r, programState->clearColor.g, programState->clearColor.b, 1.0f);
-//             glClear(GL_COLOR_BUFFER_BIT);
-//             glDisable(GL_DEPTH_TEST);
-
-
             // ANTI-ALIASING: ukljucivanje
-            // ****************************************************************************************************
-            glBindFramebuffer(GL_FRAMEBUFFER, framebuffer);
-            glClearColor(programState->clearColor.r, programState->clearColor.g, programState->clearColor.b, 1.0f);
-            glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-
-            hdrShader.use();
-            glActiveTexture(GL_TEXTURE0);
-            glBindTexture(GL_TEXTURE_2D, colorBuffer);
-            hdrShader.setInt("hdr", hdr);
-            hdrShader.setFloat("exposure", exposure);
-            renderQuad();
-
-            //std::cout << "hdr: " << (hdr ? "on" : "off") << "| exposure: " << exposure << '\n';
-
+            // *************************************************************************************************************
             glBindFramebuffer(GL_FRAMEBUFFER, 0);
             glClearColor(programState->clearColor.r, programState->clearColor.g, programState->clearColor.b, 1.0f);
-            glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-    //        glDisable(GL_DEPTH_TEST);
-
+            glClear(GL_COLOR_BUFFER_BIT);
+            glDisable(GL_DEPTH_TEST);
 
             screenShader.use();
+
             screenShader.setFloat("SCR_WIDTH", SCR_WIDTH);
             screenShader.setFloat("SCR_HEIGHT", SCR_HEIGHT);
             screenShader.setBool("grayscaleEnabled", programState->grayscaleEnabled);
 
-            glBindVertexArray(quadVAO);
+            glBindVertexArray(screenVAO);
             glActiveTexture(GL_TEXTURE0);
             glBindTexture(GL_TEXTURE_2D_MULTISAMPLE, textureColorBufferMultiSampled);
             glDrawArrays(GL_TRIANGLES, 0, 6);
@@ -999,6 +785,12 @@ void mouse_callback(GLFWwindow *window, double xpos, double ypos) {
     }
 }
 
+void mouse_button_callback(GLFWwindow* window, int button, int action, int mods)
+{
+    if (button == GLFW_MOUSE_BUTTON_RIGHT && action == GLFW_PRESS)
+        programState->spotlight = !programState->spotlight;
+}
+
 // glfw: whenever the mouse scroll wheel scrolls, this callback is called
 // ----------------------------------------------------------------------
 void scroll_callback(GLFWwindow *window, double xoffset, double yoffset) {
@@ -1046,10 +838,6 @@ void key_callback(GLFWwindow *window, int key, int scancode, int action, int mod
         programState->camera.Pitch = 0.0f;
         programState->camera.Front = glm::vec3(0.0f, 0.0f, -1.0f);
     }
-
-    if (key == GLFW_KEY_K && action == GLFW_PRESS) {
-        programState->spotlight = !programState->spotlight;
-    }
 }
 
 void DrawImGui(ProgramState *programState) {
@@ -1081,8 +869,8 @@ void DrawImGui(ProgramState *programState) {
         ImGui::Bullet();
         ImGui::Text("Reset camera position: P");
         ImGui::Bullet();
-        ImGui::Text("Toggle camera spotlight on/off: K");
-        ImGui::DragFloat("Camera Movement Speed", (float *) &programState->camera.MovementSpeed, 0.5f, 2.5f, 100.0f);
+        ImGui::Text("Toggle flashlight on/off: RMB (Right Click)");
+        ImGui::DragFloat("Camera Movement Speed", (float *) &c.MovementSpeed, 0.5f, 2.5f, 100.0f);
         ImGui::End();
     }
 
@@ -1223,32 +1011,22 @@ void renderCube()
     glBindVertexArray(0);
 }
 
-unsigned int loadCubeMap(vector<std::string> faces)
+void updateFlickering()
 {
-    unsigned int textureID;
-    glGenTextures(1, &textureID);
-    glBindTexture(GL_TEXTURE_CUBE_MAP, textureID);
+    pulseAccTime += deltaTime;
+    if(pulseAccTime > pulseCycleTime)
+        pulseAccTime = 0.0f;
 
-    int width, height, nrChannels;
-    for (unsigned int i = 0; i < faces.size(); i++)
-    {
-        unsigned char *data = stbi_load(faces[i].c_str(), &width, &height, &nrChannels, 0);
-        if (data)
-        {
-            glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, 0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, data);
-            stbi_image_free(data);
-        }
-        else
-        {
-            std::cout << "CubeMap texture failed to load at path: " << faces[i] << std::endl;
-            stbi_image_free(data);
-        }
+    flickerAccTime += deltaTime;
+    if(flickerAccTime > flickerCycleTime) {
+        flickerCycleTime = (rand() % 100) / 50.0f;
+        mode = rand() % 5;
+        flickerAccTime = 0.0f;
     }
-    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
 
-    return textureID;
+    flickerMode[0] = (float)((sin(glfwGetTime()) / 2 + 0.5) * cos(rand()));
+    flickerMode[1] = 0.2f;
+    flickerMode[2] = (float)(0.65 - cos(M_PI * (pulseAccTime / pulseCycleTime)) * 0.5);
+    flickerMode[3] = 0.0f;
+    flickerMode[4] = 1.0f;
 }

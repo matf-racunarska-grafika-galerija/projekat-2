@@ -54,6 +54,7 @@ uniform PointLight pointLight;
 uniform DirLight dirLight;
 uniform Material material;
 uniform Spotlight lampa;
+uniform Spotlight flickeringLight;
 uniform vec3 viewPosition;
 
 vec3 CalcDirLight(DirLight light, vec3 normal, vec3 viewDir);
@@ -73,6 +74,7 @@ void main()
     vec3 result = CalcDirLight(dirLight, normal, viewDir);
     result += CalcPointLight(pointLight, normal, fs_in.FragPos, viewDir);
     result += CalcSpotLight(lampa, normal, fs_in.FragPos, viewDir);
+    result += CalcSpotLight(flickeringLight, normal, fs_in.FragPos, viewDir);
 
     FragColor = vec4(result, 1.0);
 }
