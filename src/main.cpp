@@ -177,9 +177,8 @@ int main() {
 
     // build and compile shaders
     Shader objShader("resources/shaders/objectShader.vs", "resources/shaders/objectShader.fs");
-    Shader screenShader("resources/shaders/anti-aliasing.vs", "resources/shaders/anti-aliasing.fs");
+    Shader screenShader("resources/shaders/postProcessing.vs", "resources/shaders/postProcessing.fs");
     Shader skyboxShader("resources/shaders/skybox.vs", "resources/shaders/skybox.fs");
-    Shader hdrShader("resources/shaders/hdr.vs", "resources/shaders/hdr.fs");
     Shader shaderGeometryPass("resources/shaders/gBuffer.vs", "resources/shaders/gBuffer.fs");
     Shader shaderLightingPass("resources/shaders/deferredShadingLightingPassShader.vs", "resources/shaders/deferredShadingLigthingPassShader.fs");
     Shader shaderLightBox("resources/shaders/deferredLightShow.vs", "resources/shaders/deferredLightShow.fs");
@@ -236,8 +235,9 @@ int main() {
     unsigned int amount = 9001; // IT'S OVER 9000 !!!
     unsigned int tallgrassVAO = setupTallGrass(amount);
 
-    unsigned int framebuffer, textureColorBufferMultiSampled;
-    unsigned int screenVAO = setupAntiAliasing(framebuffer, textureColorBufferMultiSampled, SCR_WIDTH, SCR_HEIGHT);
+    // Anti-aliasing i HDR
+    unsigned int framebuffer, textureColorBufferMultiSampled, hdrColorBuffer;
+    unsigned int screenVAO = setupPostProcessing(framebuffer, textureColorBufferMultiSampled, hdrColorBuffer, SCR_WIDTH, SCR_HEIGHT);
 
     unsigned int gPosition, gNormal, gAlbedoSpec;
     unsigned int gBuffer = setupGBuffer(gPosition, gNormal, gAlbedoSpec, SCR_WIDTH, SCR_HEIGHT);
@@ -249,43 +249,14 @@ int main() {
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 
-
-    // ------------------------------------------------------------------------------------------------------------------------
-    //HDR
-    unsigned int hdrFBO;
-    glGenFramebuffers(1, &hdrFBO);
-    // create floating point color buffer
-    unsigned int colorBuffer;
-    glGenTextures(1, &colorBuffer);
-    glBindTexture(GL_TEXTURE_2D, colorBuffer);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F, SCR_WIDTH, SCR_HEIGHT, 0, GL_RGBA, GL_FLOAT, NULL);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    // create depth buffer (renderbuffer)
-    unsigned int rboDepth;
-    glGenRenderbuffers(1, &rboDepth);
-    glBindRenderbuffer(GL_RENDERBUFFER, rboDepth);
-    glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT, SCR_WIDTH, SCR_HEIGHT);
-    // attach buffers
-    glBindFramebuffer(GL_FRAMEBUFFER, hdrFBO);
-    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, colorBuffer, 0);
-    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, rboDepth);
-    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
-        std::cerr << "setupHDR::ERROR::FRAMEBUFFER Framebuffer is not complete!" << std::endl;
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
-    //------------------------------------------------------------------------------------------------------------------------
-
-
     // konfiguracija shadera
     screenShader.use();
-    screenShader.setInt("screenTexture", 0);
+    screenShader.setInt("hdrBuffer", 0);
+    screenShader.setInt("screenTexture", 1);
 
     objShader.use();
     objShader.setInt("material.texture_diffuse1", 0);
     objShader.setInt("material.texture_specular1", 1);
-
-    hdrShader.use();
-    hdrShader.setInt("hdrBuffer", 0);
 
     shaderLightingPass.use();
     shaderLightingPass.setInt("gPosition", 0);
@@ -348,7 +319,7 @@ int main() {
         if(programState->introComplete == false)
         {
             // intro speed
-            programState->camera.Position.z -= 35.0f * deltaTime;
+            programState->camera.Position.z -= 15.0f * deltaTime;
         }
 
         if(programState->introComplete == false && programState->camera.Position.z < 0) {
@@ -365,7 +336,7 @@ int main() {
             glBindFramebuffer(GL_FRAMEBUFFER, gBuffer);
             glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
             projection = glm::perspective(glm::radians(programState->camera.Zoom),
-                                                    (float) SCR_WIDTH / (float) SCR_HEIGHT, 0.1f, 100.0f);
+                                                    (float) SCR_WIDTH / (float) SCR_HEIGHT, 0.1f, 1000.0f);
             view = programState->camera.GetViewMatrix();
             model = glm::mat4(1.0f);
             shaderGeometryPass.use();
@@ -379,16 +350,26 @@ int main() {
                 ulicnaSvetiljkaModel.Draw(shaderGeometryPass);
             }
             glDisable(GL_CULL_FACE);
-                // crtanje podloge
-                model = glm::mat4(1.0f);
+
+            for(int i = 0; i < NR_TREES; i++)
+            {
+                model = glm::mat4 (1.0f);
+                model = glm::translate(model, treePos[i]);
+                model = glm::scale(model, glm::vec3(2.0f));
                 shaderGeometryPass.setMat4("model", model);
-                glActiveTexture(GL_TEXTURE0);
-                glBindTexture(GL_TEXTURE_2D, podlogaDiffuseMap);
-                glActiveTexture(GL_TEXTURE1);
-                glBindTexture(GL_TEXTURE_2D, podlogaSpecularMap);
-                glActiveTexture(GL_TEXTURE2);
-                glBindVertexArray(podlogaVAO);
-                glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);                
+                treeModel.Draw(shaderGeometryPass);
+            }
+
+            // crtanje podloge
+            model = glm::mat4(1.0f);
+            shaderGeometryPass.setMat4("model", model);
+            glActiveTexture(GL_TEXTURE0);
+            glBindTexture(GL_TEXTURE_2D, podlogaDiffuseMap);
+            glActiveTexture(GL_TEXTURE1);
+            glBindTexture(GL_TEXTURE_2D, podlogaSpecularMap);
+            glActiveTexture(GL_TEXTURE2);
+            glBindVertexArray(podlogaVAO);
+            glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
             glEnable(GL_CULL_FACE);
 
             // renderovanje ulice
@@ -587,19 +568,13 @@ int main() {
         objShader.setMat4("model", model);
         stoolModel.Draw(objShader);
 
-        glDisable(GL_CULL_FACE);
+        // renderovanje kuca:
+        model = glm::mat4(1.0f);
+        model = glm::translate(model, glm::vec3(15, 0, 15));
+        model = glm::scale(model, glm::vec3(0.3));
+        objShader.setMat4("model", model);
+        cottageHouseModel.Draw(objShader);
 
-        // renderovanje drveca
-        for(int i = 0; i < NR_TREES; i++)
-        {
-            model = glm::mat4 (1.0f);
-            model = glm::translate(model, treePos[i]);
-            model = glm::scale(model, glm::vec3(2.0f));
-            objShader.setMat4("model", model);
-            treeModel.Draw(objShader);
-        }
-
-        // renderovanje kuce:
         model = glm::mat4(1.0f);
         model = glm::translate(model, glm::vec3(-20, 0.01, -20));
         model = glm::scale(model, glm::vec3(0.05f));
@@ -607,14 +582,19 @@ int main() {
         objShader.setMat4("model", model);
         cottageHouseModel2.Draw(objShader);
 
-        // renderovanje supe:
-        model = glm::mat4(1.0f);
-        model = glm::translate(model, glm::vec3(15, 0, 15));
-        model = glm::scale(model, glm::vec3(0.3));
-        objShader.setMat4("model", model);
-        cottageHouseModel.Draw(objShader);
+        glDisable(GL_CULL_FACE);
 
         if(programState->introComplete) {
+            // renderovanje drveca
+            for(int i = 0; i < NR_TREES; i++)
+            {
+                model = glm::mat4 (1.0f);
+                model = glm::translate(model, treePos[i]);
+                model = glm::scale(model, glm::vec3(2.0f));
+                objShader.setMat4("model", model);
+                treeModel.Draw(objShader);
+            }
+
             // renderovanje ulice
             model = glm::mat4(1.0f);
             model = glm::translate(model, glm::vec3(-0.2f, -1.0f, 11.0f));
@@ -659,8 +639,6 @@ int main() {
             model = glm::mat4(1.0f);
             objShader.setMat4("model", model);
 
-            //za blinfonga treba shinnes 4* veci al trava ne sme da se presijava bas tako da tu treba obratiti paznju
-            //objShader.setFloat("material.shininess", 32.0f);
             glBindVertexArray(podlogaVAO);
             glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
         }
@@ -681,7 +659,6 @@ int main() {
 
         glEnable(GL_CULL_FACE);
 
-
         //object rendering end, start of skybox rendering
         skyboxShader.use();
         skyboxShader.setInt("skybox", 0);
@@ -701,10 +678,21 @@ int main() {
         glDepthMask(GL_TRUE);
         glDepthFunc(GL_LESS); // set depth function back to default
 
-
         if(programState->introComplete) {
             // ANTI-ALIASING: ukljucivanje
             // *************************************************************************************************************
+//            glBindFramebuffer(GL_READ_FRAMEBUFFER, framebuffer);
+//            glBindFramebuffer(GL_DRAW_FRAMEBUFFER, hdrFBO);
+//            glBlitFramebuffer(0, 0, SCR_WIDTH, SCR_HEIGHT, 0, 0, SCR_WIDTH, SCR_HEIGHT, GL_DEPTH_BUFFER_BIT, GL_NEAREST);
+//
+//            hdrShader.use();
+//            hdrShader.use();
+//            glActiveTexture(GL_TEXTURE0);
+//            glBindTexture(GL_TEXTURE_2D, colorBuffer);
+//            hdrShader.setInt("hdr", hdr);
+//            hdrShader.setFloat("exposure", exposure);
+//            renderQuad();
+
             glBindFramebuffer(GL_FRAMEBUFFER, 0);
             glClearColor(programState->clearColor.r, programState->clearColor.g, programState->clearColor.b, 1.0f);
             glClear(GL_COLOR_BUFFER_BIT);
@@ -716,10 +704,17 @@ int main() {
             screenShader.setFloat("SCR_HEIGHT", SCR_HEIGHT);
             screenShader.setBool("grayscaleEnabled", programState->grayscaleEnabled);
 
+            screenShader.setInt("hdr", hdr);
+            screenShader.setFloat("exposure", exposure);
+
             glBindVertexArray(screenVAO);
             glActiveTexture(GL_TEXTURE0);
+            glBindTexture(GL_TEXTURE_2D_MULTISAMPLE, hdrColorBuffer);
+            glActiveTexture(GL_TEXTURE1);
             glBindTexture(GL_TEXTURE_2D_MULTISAMPLE, textureColorBufferMultiSampled);
             glDrawArrays(GL_TRIANGLES, 0, 6);
+
+            std::cout << "hdr: " << (hdr ? "on" : "off") << "| exposure: " << exposure << std::endl;
             // *************************************************************************************************************
         }
 
@@ -790,7 +785,6 @@ void processInput(GLFWwindow *window) {
             programState->camera.ProcessKeyboard(DOWN, deltaTime);
         if (glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS)
             programState->camera.ProcessKeyboard(UP, deltaTime);
-
     }
 }
 
@@ -887,7 +881,7 @@ void DrawImGui(ProgramState *programState) {
         ImGui::SetNextWindowPos(ImVec2(0,0));
         ImGui::SetNextWindowSize(ImVec2(500, 150));
         ImGui::Begin("Settings:");
-        ImGui::DragFloat("Ambient Light Strength", (float *) &programState->whiteAmbientLightStrength, 0.005f, 0.0f, 1.0f);
+        ImGui::DragFloat("Ambient Light Strength", (float *) &programState->whiteAmbientLightStrength, 0.005f, 0.05f, 1.0f);
         ImGui::DragFloat3("Backpack position", (float*)&programState->tempPosition);
         ImGui::DragFloat("Backpack scale", &programState->tempScale, 0.05, 0.1, 4.0);
         ImGui::End();

@@ -175,7 +175,7 @@ unsigned int setupTallGrass(unsigned int &amount)
     return tallgrassVAO;
 }
 
-unsigned int setupAntiAliasing(unsigned int &framebuffer, unsigned int &textureColorBufferMultiSampled, const unsigned int SCR_WIDTH, const unsigned int SCR_HEIGHT)
+unsigned int setupPostProcessing(unsigned int &framebuffer, unsigned int &textureColorBufferMultiSampled, unsigned int &hdrColorBuffer, const unsigned int SCR_WIDTH, const unsigned int SCR_HEIGHT)
 {
     float quadVertices[] = {
             // positions            // texCoords
@@ -199,15 +199,24 @@ unsigned int setupAntiAliasing(unsigned int &framebuffer, unsigned int &textureC
     glEnableVertexAttribArray(1);
     glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void*)(2 * sizeof(float)));
 
-
     glGenFramebuffers(1, &framebuffer);
     glBindFramebuffer(GL_FRAMEBUFFER, framebuffer);
+
+    glGenTextures(1, &hdrColorBuffer);
+    glBindTexture(GL_TEXTURE_2D_MULTISAMPLE, hdrColorBuffer);
+    glTexImage2DMultisample(GL_TEXTURE_2D_MULTISAMPLE, 4, GL_RGBA16F, SCR_WIDTH, SCR_HEIGHT, GL_TRUE);
+    glTexParameteri(GL_TEXTURE_2D_MULTISAMPLE, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D_MULTISAMPLE, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D_MULTISAMPLE, hdrColorBuffer, 0);
 
     glGenTextures(1, &textureColorBufferMultiSampled);
     glBindTexture(GL_TEXTURE_2D_MULTISAMPLE, textureColorBufferMultiSampled);
     glTexImage2DMultisample(GL_TEXTURE_2D_MULTISAMPLE, 4, GL_RGB, SCR_WIDTH, SCR_HEIGHT, GL_TRUE);
-    glBindTexture(GL_TEXTURE_2D_MULTISAMPLE, 0);
-    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D_MULTISAMPLE, textureColorBufferMultiSampled, 0);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT1, GL_TEXTURE_2D_MULTISAMPLE, textureColorBufferMultiSampled, 0);
+
+
+    unsigned int attachments[2] = { GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1 };
+    glDrawBuffers(2, attachments);
 
     unsigned int rbo;
     glGenRenderbuffers(1, &rbo);
