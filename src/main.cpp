@@ -170,6 +170,7 @@ int main() {
     Shader skyboxShader("resources/shaders/skybox.vs", "resources/shaders/skybox.fs");
     Shader hdrShader("resources/shaders/hdr.vs", "resources/shaders/hdr.fs");
     Shader blurShader("resources/shaders/blur.vs", "resources/shaders/blur.fs");
+    //podseti me samo da izmenimo shader kojim crtas svetlo za svetiljku zbog bluma
     Shader jednaSvetiljka("resources8/shaders/objectShader.vs", "resources/shaders/jedna.fs");
 
 
@@ -450,6 +451,8 @@ int main() {
     }
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
+
+    //da probamo ovo umesto antialiasing framebuffera
 //    unsigned int screenFBO;
 //    unsigned int screenColorBuffer;
 //    glGenFramebuffers(1, &screenFBO);
@@ -507,6 +510,9 @@ int main() {
     
 
     // konfiguracija shadera
+    skyboxShader.use();
+    skyboxShader.setInt("skybox", 0);
+
     screenShader.use();
     screenShader.setInt("screenTexture", 0);
 
@@ -697,9 +703,9 @@ int main() {
           // *************************************************************************************************************
           //glBindFramebuffer(GL_FRAMEBUFFER, framebuffer);
           glBindFramebuffer(GL_FRAMEBUFFER, hdrFBO);
-          glClearColor(programState->clearColor.r, programState->clearColor.g, programState->clearColor.b, 1.0f);
+          //glClearColor(programState->clearColor.r, programState->clearColor.g, programState->clearColor.b, 1.0f);
           glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-          glEnable(GL_DEPTH_TEST);
+          //glEnable(GL_DEPTH_TEST);    ovo sto sam zakomentarisao moze da se proveri
           // *************************************************************************************************************
 //             // ANTI-ALIASING: preusmeravamo renderovanje na nas framebuffer da bismo imali MSAA
 //             // *************************************************************************************************************
@@ -862,8 +868,6 @@ int main() {
 
 
         //object rendering end, start of skybox rendering
-        skyboxShader.use();
-        skyboxShader.setInt("skybox", 0);
 
         glDepthMask(GL_FALSE);
         glDepthFunc(GL_LEQUAL);  // change depth function so depth test passes when values are equal to depth buffer's content
@@ -890,36 +894,57 @@ int main() {
 //             glDisable(GL_DEPTH_TEST);
 
 
-            // ANTI-ALIASING: ukljucivanje
+            // BLOOM
             // ****************************************************************************************************
-            glBindFramebuffer(GL_FRAMEBUFFER, framebuffer);
-            glClearColor(programState->clearColor.r, programState->clearColor.g, programState->clearColor.b, 1.0f);
-            glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+            //zavrseno renderovanje u bloomframebuffer
+            glBindFramebuffer(GL_FRAMEBUFFER, 0);
+            bool horizontal = true;
+            bool first_iteration = true;
+            blurShader.use();
+            unsigned int amount = 10;
+            for (unsigned int i = 0; i < amount; ++i) {
+                glBindFramebuffer(GL_FRAMEBUFFER, pingpongFBO[horizontal]);
+                blurShader.setBool("horizontal", horizontal);
+                glActiveTexture(GL_TEXTURE0);
+                glBindTexture(GL_TEXTURE_2D, first_iteration ? colorBuffers[i] : pingpongColorBuffers[!horizontal]);
 
+                glBindVertexArray(quadVAO);
+                glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+                glBindVertexArray(0);
+
+                horizontal = !horizontal;
+                if (first_iteration) {
+                    first_iteration = false;
+                }
+            }
+            glBindFramebuffer(GL_FRAMEBUFFER, framebuffer);
+            glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
             hdrShader.use();
             glActiveTexture(GL_TEXTURE0);
-            glBindTexture(GL_TEXTURE_2D, colorBuffer);
-            hdrShader.setInt("hdr", hdr);
+            glBindTexture(GL_TEXTURE_2D, colorBuffers[0]);
+            glActiveTexture(GL_TEXTURE1);
+            glBindTexture(GL_TEXTURE_2D, pingpongColorBuffers[!horizontal]);
+            hdrShader.setBool("hdr", hdr);
+            hdrShader.setBool("bloom", bloom);
             hdrShader.setFloat("exposure", exposure);
-            renderQuad();
 
-            std::cout << "hdr: " << (hdr ? "on" : "off") << "| exposure: " << exposure << '\n';
+            glBindVertexArray(quadVAO);
+            glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+            glBindVertexArray(0);
 
             glBindFramebuffer(GL_FRAMEBUFFER, 0);
-            glClearColor(programState->clearColor.r, programState->clearColor.g, programState->clearColor.b, 1.0f);
             glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-    //        glDisable(GL_DEPTH_TEST);
-
-
             screenShader.use();
+            //dal ovde negde treba depthtestdisable?
             screenShader.setFloat("SCR_WIDTH", SCR_WIDTH);
             screenShader.setFloat("SCR_HEIGHT", SCR_HEIGHT);
             screenShader.setBool("grayscaleEnabled", programState->grayscaleEnabled);
 
             glBindVertexArray(quadVAO);
             glActiveTexture(GL_TEXTURE0);
-            glBindTexture(GL_TEXTURE_2D_MULTISAMPLE, textureColorBufferMultiSampled);
+            glBindTexture(GL_TEXTURE_2D_MULTISAMPLE, screenColorBuffer);
             glDrawArrays(GL_TRIANGLES, 0, 6);
+            glBindVertexArray(0);
             // *************************************************************************************************************
         }
 
@@ -953,29 +978,6 @@ int main() {
 void processInput(GLFWwindow *window) {
     if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
         glfwSetWindowShouldClose(window, true);
-  
-    if (glfwGetKey(window, GLFW_KEY_H) == GLFW_PRESS && !hdrKeyPressed)
-    {
-          hdr = !hdr;
-          hdrKeyPressed = true;
-    }
-    if (glfwGetKey(window, GLFW_KEY_H) == GLFW_RELEASE)
-    {
-          hdrKeyPressed = false;
-    }
-
-    if (glfwGetKey(window, GLFW_KEY_Q) == GLFW_PRESS)
-    {
-        if (exposure > 0.0f)
-             exposure -= 0.01f;
-        else
-            exposure = 0.0f;
-    }
-    else if (glfwGetKey(window, GLFW_KEY_E) == GLFW_PRESS)
-    {
-        exposure += 0.01f;
-    }
-
 
     if(programState->enabledKeyboardInput) {
         if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
@@ -1040,6 +1042,26 @@ void key_callback(GLFWwindow *window, int key, int scancode, int action, int mod
             programState->CameraMouseMovementUpdateEnabled = true;
         }
 
+    }
+    //hdr bloom
+    if (key == GLFW_KEY_H && action == GLFW_PRESS) {
+        hdr = !hdr;
+    }
+
+    if (key == GLFW_KEY_B && action == GLFW_PRESS) {
+        bloom = !bloom;
+    }
+
+    if (glfwGetKey(window, GLFW_KEY_Q) == GLFW_PRESS)
+    {
+        if (exposure > 0.0f)
+            exposure -= 0.01f;
+        else
+            exposure = 0.0f;
+    }
+    else if (glfwGetKey(window, GLFW_KEY_E) == GLFW_PRESS)
+    {
+        exposure += 0.01f;
     }
 
     if (key == GLFW_KEY_C && action == GLFW_PRESS && programState->ImGuiEnabled) {

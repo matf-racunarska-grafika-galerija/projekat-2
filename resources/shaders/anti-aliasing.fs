@@ -3,7 +3,7 @@ out vec4 FragColor;
 
 in vec2 TexCoords;
 
-uniform sampler2DMS screenTexture;
+uniform sampler2DMS screenTexture;  //ovo moze biti jedini problem
 
 uniform bool grayscaleEnabled;
 uniform float SCR_WIDTH;
