@@ -189,7 +189,7 @@ int main() {
     Model ourModel("resources/objects/backpack/backpack.obj");
     ourModel.SetShaderTextureNamePrefix("material.");
 
-    Model ulicnaSvetiljkaModel("resources/objects/Street Lamp2/StreetLamp.obj");
+    Model ulicnaSvetiljkaModel("resources/objects/street_lamp/StreetLamp.obj");
     ulicnaSvetiljkaModel.SetShaderTextureNamePrefix("material.");
 
     Model houseModel("resources/objects/House/House.obj");
@@ -210,10 +210,23 @@ int main() {
     Model cottageHouseModel("resources/objects/cottage_house/cottage_blender.obj");
     cottageHouseModel.SetShaderTextureNamePrefix("material.");
 
+    Model cottageHouseModel2("resources/objects/cottage_house2/cottage2.obj");
+    cottageHouseModel2.SetShaderTextureNamePrefix("material.");
+
     Model carModel("resources/objects/car/LowPolyCars.obj");
     carModel.SetShaderTextureNamePrefix("material.");
 
+    Model treeModel("resources/objects/tree/tree.obj");
+    treeModel.SetShaderTextureNamePrefix("material.");
+
+    Model tvModel("resources/objects/tv/tv.obj");
+    tvModel.SetShaderTextureNamePrefix("material.");
+
+    Model stoolModel("resources/objects/tv/wooden stool.obj");
+    stoolModel.SetShaderTextureNamePrefix(".material");
+
     stbi_set_flip_vertically_on_load(true);
+
 
     unsigned int podlogaVAO =setupFloorPlane();
 
@@ -299,6 +312,14 @@ int main() {
         lightColors.push_back(glm::vec3(rColor, gColor, bColor));
     }
 
+    // pozicije drveca
+    srand(9); // lupao sam random seedove dok nisam naisao na neki koji mi se svidja (ne menjaj)
+    const unsigned int NR_TREES = 50;
+    std::vector<glm::vec3> treePos;
+    for(int i = 0; i < NR_TREES; i++)
+        treePos.push_back(glm::vec3(rand() % 200 - 100, 0.0f, rand() % 200 - 100));
+
+
     if(programState->introComplete == false) {
         programState->enabledKeyboardInput = false;
         programState->enabledMouseInput = false;
@@ -327,7 +348,7 @@ int main() {
         if(programState->introComplete == false)
         {
             // intro speed
-            programState->camera.Position.z -= 15.0f * deltaTime;
+            programState->camera.Position.z -= 35.0f * deltaTime;
         }
 
         if(programState->introComplete == false && programState->camera.Position.z < 0) {
@@ -484,7 +505,7 @@ int main() {
         objShader.setVec3("dirLight.specular", 0.2f, 0.2f, 0.2f);
 
         objShader.setVec3("pointLight.position", lightPos);
-        objShader.setVec3("pointLight.ambient", glm::vec3(1.0f));
+        objShader.setVec3("pointLight.ambient", glm::vec3(0.0f));
         objShader.setVec3("pointLight.diffuse", 0.05f, 0.05f, 0.05);
         objShader.setVec3("pointLight.specular", 0.2f, 0.2f, 0.2f);
         objShader.setFloat("pointLight.constant", 1.0f);
@@ -531,13 +552,6 @@ int main() {
         renderCube();
 
         objShader.use();
-        // renderovanje ranca:
-        model = glm::mat4(1.0f);
-        model = glm::translate(model,programState->tempPosition);
-        model = glm::scale(model, glm::vec3(programState->tempScale));
-        objShader.setMat4("model", model);
-        ourModel.Draw(objShader);
-
         if(programState->introComplete) {
             // renderovanje baterijske lampe:
             model = CalcFlashlightPosition();
@@ -561,17 +575,41 @@ int main() {
         objShader.setMat4("model", model);
         roadStopModel.Draw(objShader);
 
+        // renderovanje tv-a:
+        model = glm::mat4(1.0f);
+        model = glm::translate(model,programState->tempPosition);
+        model = glm::scale(model, glm::vec3(programState->tempScale));
+        objShader.setMat4("model", model);
+        tvModel.Draw(objShader);
+        model = glm::mat4(1.0f);
+        model = glm::translate(model,programState->tempPosition - glm::vec3(0.0f, 0.625f, 0.13f));
+        model = glm::scale(model, glm::vec3(0.25f, 0.15f, 0.35f));
+        objShader.setMat4("model", model);
+        stoolModel.Draw(objShader);
+
         glDisable(GL_CULL_FACE);
+
+        // renderovanje drveca
+        for(int i = 0; i < NR_TREES; i++)
+        {
+            model = glm::mat4 (1.0f);
+            model = glm::translate(model, treePos[i]);
+            model = glm::scale(model, glm::vec3(2.0f));
+            objShader.setMat4("model", model);
+            treeModel.Draw(objShader);
+        }
+
         // renderovanje kuce:
         model = glm::mat4(1.0f);
         model = glm::translate(model, glm::vec3(-20, 0.01, -20));
-        model = glm::scale(model, glm::vec3(0.7f));
+        model = glm::scale(model, glm::vec3(0.05f));
+        model = glm::rotate(model, glm::radians(90.0f), glm::vec3(0.0f, 1.0f, 0.0f));
         objShader.setMat4("model", model);
-        houseModel.Draw(objShader);
+        cottageHouseModel2.Draw(objShader);
 
         // renderovanje supe:
         model = glm::mat4(1.0f);
-        model = glm::translate(model, glm::vec3(25, 0, 25));
+        model = glm::translate(model, glm::vec3(15, 0, 15));
         model = glm::scale(model, glm::vec3(0.3));
         objShader.setMat4("model", model);
         cottageHouseModel.Draw(objShader);

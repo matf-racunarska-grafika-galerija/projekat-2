@@ -9,6 +9,7 @@ Ks 0.500000 0.500000 0.500000
 Ni 1.000000
 d 0.222222
 illum 2
+map_Kd glass.png
 
 newmtl Material.001
 Ns 96.078431
@@ -38,6 +39,7 @@ Ks 0.500000 0.500000 0.500000
 Ni 1.000000
 d 1.000000
 illum 2
+map_Kd grey-concrete-texture.jpg
 
 newmtl None
 Ns 0
@@ -46,3 +48,4 @@ Kd 0.8 0.8 0.8
 Ks 0.8 0.8 0.8
 d 1
 illum 2
+map_Kd grey-concrete-texture.jpg
