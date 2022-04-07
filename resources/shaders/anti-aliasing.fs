@@ -11,6 +11,7 @@ uniform float SCR_HEIGHT;
 
 void main()
 {
+    const float gamma = 2.2f;
     ivec2 viewPortDim = ivec2(SCR_WIDTH, SCR_HEIGHT);
     ivec2 coord = ivec2(viewPortDim * TexCoords);
     vec3 sample0 = texelFetch(screenTexture, coord, 0).rgb;
@@ -22,8 +23,11 @@ void main()
 
     if(grayscaleEnabled) {
         float grayscale = 0.2126 * col.r + 0.7152 * col.g + 0.0722 * col.b;
-        FragColor = vec4(vec3(grayscale), 1.0);
+        vec3 result = pow(vec3(grayscale), vec3(1.0 / gamma));
+        FragColor = vec4(result, 1.0);
     }
-    else
+    else{
+        col = pow(col, vec3(1.0 / gamma));
         FragColor = vec4(col, 1.0);
-} 
+    }
+}
