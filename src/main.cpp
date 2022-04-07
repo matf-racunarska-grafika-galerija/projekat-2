@@ -31,6 +31,7 @@ const unsigned int SCR_HEIGHT = 900;
 bool hdr = true;
 bool bloom = true;
 bool hdrKeyPressed = false;
+bool bloomKeyPressed = false;
 float exposure = 1.0f;
 
 // camera
@@ -181,7 +182,7 @@ int main() {
     Shader screenShader("resources/shaders/postProcessing.vs", "resources/shaders/postProcessing.fs");
     Shader skyboxShader("resources/shaders/skybox.vs", "resources/shaders/skybox.fs");
     Shader shaderGeometryPass("resources/shaders/gBuffer.vs", "resources/shaders/gBuffer.fs");
-    Shader shaderLightingPass("resources/shaders/deferredShadingLightingPassShader.vs", "resources/shaders/deferredShadingLigthingPassShader.fs");
+    Shader shaderLightingPass("resources/shaders/deferredShadingLightingPassShader.vs", "resources/shaders/deferredShadingLightingPassShader.fs");
     Shader shaderLightBox("resources/shaders/deferredLightShow.vs", "resources/shaders/deferredLightShow.fs");
     Shader instancedGrass("resources/shaders/instancedGrass.vs", "resources/shaders/instancedGrass.fs");
     Shader blurShader("resources/shaders/blur.vs", "resources/shaders/blur.fs");
@@ -229,7 +230,7 @@ int main() {
     stbi_set_flip_vertically_on_load(true);
 
 
-    unsigned int podlogaVAO =setupFloorPlane();
+    unsigned int podlogaVAO = setupFloorPlane();
 
     unsigned int cubeMapTexture;
     unsigned int skyboxVAO = setupSkybox(cubeMapTexture);
@@ -347,7 +348,7 @@ int main() {
         if(programState->introComplete == false)
         {
             // intro speed
-            programState->camera.Position.z -= 55.0f * deltaTime;
+            programState->camera.Position.z -= 15.0f * deltaTime;
         }
 
         if(programState->introComplete == false && programState->camera.Position.z < 0) {
@@ -364,7 +365,7 @@ int main() {
             glBindFramebuffer(GL_FRAMEBUFFER, gBuffer);
             glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
             projection = glm::perspective(glm::radians(programState->camera.Zoom),
-                                                    (float) SCR_WIDTH / (float) SCR_HEIGHT, 0.1f, 1000.0f);
+                                                    (float) SCR_WIDTH / (float) SCR_HEIGHT, 0.1f, 200.0f);
             view = programState->camera.GetViewMatrix();
             model = glm::mat4(1.0f);
             shaderGeometryPass.use();
@@ -514,18 +515,26 @@ int main() {
 
         objShader.setVec3("pointLight.position", lightPos);
         objShader.setVec3("pointLight.ambient", glm::vec3(0.0f));
-        objShader.setVec3("pointLight.diffuse", 0.05f, 0.05f, 0.05);
+        objShader.setVec3("pointLight.diffuse", 13.0f, 0.0f, 0.0f);
         objShader.setVec3("pointLight.specular", 0.2f, 0.2f, 0.2f);
         objShader.setFloat("pointLight.constant", 1.0f);
         objShader.setFloat("pointLight.linear", 0.09f);
         objShader.setFloat("pointLight.quadratic", 0.032f);
+        shaderLightBox.use();
+        model = glm::mat4(1.0f);
+        model = glm::translate(model, lightPos);
+        model = glm::scale(model, glm::vec3(0.5f));
+        shaderLightBox.setMat4("model", model);
+        shaderLightBox.setVec3("lightColor", glm::vec3(13.0f, 0.0f, 0.0f));
+        renderCube();
 
+        objShader.use();
         // spotlight - baterijska lampa
         objShader.setVec3("lampa.position", programState->camera.Position + 0.35f * programState->camera.Front + 0.07f * programState->camera.Right - 0.08f * programState->camera.Up);
         objShader.setVec3("lampa.direction", programState->camera.Front);
         objShader.setVec3("lampa.ambient", 0.0f, 0.0f, 0.0f);
         if(programState->spotlight) {
-            objShader.setVec3("lampa.diffuse", 5.0f, 5.0f, 5.0f);
+            objShader.setVec3("lampa.diffuse", 1.0f, 1.0f, 1.0f);
             objShader.setVec3("lampa.specular", 1.0f, 1.0f, 1.0f);
         }
         else {
@@ -538,7 +547,7 @@ int main() {
         objShader.setFloat("lampa.cutOff", glm::cos(glm::radians(10.0f)));
         objShader.setFloat("lampa.outerCutOff", glm::cos(glm::radians(15.0f)));
 
-        // flickering light
+        // spotlight - flickering light
         objShader.setVec3("flickeringLight.position", lightPositions[0]);
         objShader.setVec3("flickeringLight.direction", glm::vec3(0.0f, -1.0f, 0.0f));
         objShader.setVec3("flickeringLight.ambient", 0.0f, 0.0f, 0.0f);
@@ -709,6 +718,7 @@ int main() {
             // ANTI-ALIASING: ukljucivanje
             // *************************************************************************************************************
             glBindFramebuffer(GL_FRAMEBUFFER, 0);
+            glBindVertexArray(screenVAO);
             bool horizontal = true, first_iteration = true;
             unsigned int amount1 = 10;
             blurShader.use();
@@ -716,8 +726,9 @@ int main() {
             {
                 glBindFramebuffer(GL_FRAMEBUFFER, pingpongFBO[horizontal]);
                 blurShader.setInt("horizontal", horizontal);
+                glActiveTexture(GL_TEXTURE0);
                 glBindTexture(GL_TEXTURE_2D_MULTISAMPLE, first_iteration ? colorBuffers[1] : pingpongColorbuffers[!horizontal]);  // bind texture of other framebuffer (or scene if first iteration)
-                renderQuad();
+                glDrawArrays(GL_TRIANGLES, 0, 6);
                 horizontal = !horizontal;
                 if (first_iteration)
                     first_iteration = false;
@@ -734,11 +745,10 @@ int main() {
             screenShader.setFloat("SCR_HEIGHT", SCR_HEIGHT);
             screenShader.setBool("grayscaleEnabled", programState->grayscaleEnabled);
 
-            screenShader.setInt("hdr", hdr);
-            screenShader.setInt("bloom", bloom);
+            screenShader.setBool("hdr", hdr);
+            screenShader.setBool("bloom", bloom);
             screenShader.setFloat("exposure", exposure);
 
-            glBindVertexArray(screenVAO);
             glActiveTexture(GL_TEXTURE0);
             glBindTexture(GL_TEXTURE_2D_MULTISAMPLE, colorBuffers[0]);
             glActiveTexture(GL_TEXTURE1);
@@ -802,6 +812,17 @@ void processInput(GLFWwindow *window) {
     else if (glfwGetKey(window, GLFW_KEY_E) == GLFW_PRESS)
     {
         exposure += 0.01f;
+    }
+
+    if (glfwGetKey(window, GLFW_KEY_B) == GLFW_PRESS && !bloomKeyPressed)
+    {
+        bloom = !bloom;
+        std::cerr << "bloom " << (bloom ? "on" : "off") << endl;
+        bloomKeyPressed = true;
+    }
+    if (glfwGetKey(window, GLFW_KEY_B) == GLFW_RELEASE)
+    {
+        bloomKeyPressed = false;
     }
 
 
