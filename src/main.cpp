@@ -942,8 +942,8 @@ int main() {
 
             glBindVertexArray(quadVAO);
             glActiveTexture(GL_TEXTURE0);
-            glBindTexture(GL_TEXTURE_2D_MULTISAMPLE, screenColorBuffer);
-            glDrawArrays(GL_TRIANGLES, 0, 6);
+            glBindTexture(GL_TEXTURE_2D_MULTISAMPLE, textureColorBufferMultiSampled);
+            glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
             glBindVertexArray(0);
             // *************************************************************************************************************
         }
