@@ -29,6 +29,7 @@ void processInput(GLFWwindow *window);
 const unsigned int SCR_WIDTH = 1200;
 const unsigned int SCR_HEIGHT = 900;
 bool hdr = true;
+bool bloom = true;
 bool hdrKeyPressed = false;
 float exposure = 1.0f;
 
@@ -183,6 +184,7 @@ int main() {
     Shader shaderLightingPass("resources/shaders/deferredShadingLightingPassShader.vs", "resources/shaders/deferredShadingLigthingPassShader.fs");
     Shader shaderLightBox("resources/shaders/deferredLightShow.vs", "resources/shaders/deferredLightShow.fs");
     Shader instancedGrass("resources/shaders/instancedGrass.vs", "resources/shaders/instancedGrass.fs");
+    Shader blurShader("resources/shaders/blur.vs", "resources/shaders/blur.fs");
 
     // load models
     Model ourModel("resources/objects/backpack/backpack.obj");
@@ -236,8 +238,28 @@ int main() {
     unsigned int tallgrassVAO = setupTallGrass(amount);
 
     // Anti-aliasing i HDR
-    unsigned int framebuffer, textureColorBufferMultiSampled, hdrColorBuffer;
-    unsigned int screenVAO = setupPostProcessing(framebuffer, textureColorBufferMultiSampled, hdrColorBuffer, SCR_WIDTH, SCR_HEIGHT);
+    unsigned int framebuffer, textureColorBufferMultiSampled;
+    unsigned int colorBuffers[2];
+    unsigned int screenVAO = setupPostProcessing(framebuffer, textureColorBufferMultiSampled, colorBuffers, SCR_WIDTH, SCR_HEIGHT);
+
+    unsigned int pingpongFBO[2];
+    unsigned int pingpongColorbuffers[2];
+    glGenFramebuffers(2, pingpongFBO);
+    glGenTextures(2, pingpongColorbuffers);
+    for (unsigned int i = 0; i < 2; i++)
+    {
+        glBindFramebuffer(GL_FRAMEBUFFER, pingpongFBO[i]);
+        glBindTexture(GL_TEXTURE_2D_MULTISAMPLE, pingpongColorbuffers[i]);
+        glTexImage2DMultisample(GL_TEXTURE_2D_MULTISAMPLE, 4, GL_RGBA16F, SCR_WIDTH, SCR_HEIGHT, GL_TRUE);
+        glTexParameteri(GL_TEXTURE_2D_MULTISAMPLE, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D_MULTISAMPLE, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D_MULTISAMPLE, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE); // we clamp to the edge as the blur filter would otherwise sample repeated texture values!
+        glTexParameteri(GL_TEXTURE_2D_MULTISAMPLE, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D_MULTISAMPLE, pingpongColorbuffers[i], 0);
+        // also check if framebuffers are complete (no need for depth buffer)
+        if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
+            std::cout << "Framebuffer not complete!" << std::endl;
+    }
 
     unsigned int gPosition, gNormal, gAlbedoSpec;
     unsigned int gBuffer = setupGBuffer(gPosition, gNormal, gAlbedoSpec, SCR_WIDTH, SCR_HEIGHT);
@@ -245,18 +267,24 @@ int main() {
     // load textures
     unsigned int podlogaDiffuseMap = TextureFromFile("grass_diffuse.png", "resources/textures");
     unsigned int podlogaSpecularMap = TextureFromFile("grass_specular.png", "resources/textures");
-    unsigned int tallgrassTexture = TextureFromFile("grass.png", "resources/textures/");
+    unsigned int tallgrassTexture = TextureFromFile("grass.png", "resources/textures");
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 
     // konfiguracija shadera
     screenShader.use();
     screenShader.setInt("hdrBuffer", 0);
-    screenShader.setInt("screenTexture", 1);
+    screenShader.setInt("bloomBlur", 1);
+    screenShader.setInt("screenTexture", 2);
 
     objShader.use();
     objShader.setInt("material.texture_diffuse1", 0);
     objShader.setInt("material.texture_specular1", 1);
+
+    blurShader.use();
+    blurShader.setInt("image", 0);
+    blurShader.setInt("SCR_WIDTH", SCR_WIDTH);
+    blurShader.setInt("SCR_HEIGHT", SCR_HEIGHT);
 
     shaderLightingPass.use();
     shaderLightingPass.setInt("gPosition", 0);
@@ -319,7 +347,7 @@ int main() {
         if(programState->introComplete == false)
         {
             // intro speed
-            programState->camera.Position.z -= 15.0f * deltaTime;
+            programState->camera.Position.z -= 55.0f * deltaTime;
         }
 
         if(programState->introComplete == false && programState->camera.Position.z < 0) {
@@ -460,7 +488,6 @@ int main() {
             // ANTI-ALIASING: preusmeravamo renderovanje na nas framebuffer da bismo imali MSAA
             // *************************************************************************************************************
             glBindFramebuffer(GL_FRAMEBUFFER, framebuffer);
-            glClearColor(programState->clearColor.r, programState->clearColor.g, programState->clearColor.b, 1.0f);
             glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
             glEnable(GL_DEPTH_TEST);
             // *************************************************************************************************************
@@ -681,17 +708,20 @@ int main() {
         if(programState->introComplete) {
             // ANTI-ALIASING: ukljucivanje
             // *************************************************************************************************************
-//            glBindFramebuffer(GL_READ_FRAMEBUFFER, framebuffer);
-//            glBindFramebuffer(GL_DRAW_FRAMEBUFFER, hdrFBO);
-//            glBlitFramebuffer(0, 0, SCR_WIDTH, SCR_HEIGHT, 0, 0, SCR_WIDTH, SCR_HEIGHT, GL_DEPTH_BUFFER_BIT, GL_NEAREST);
-//
-//            hdrShader.use();
-//            hdrShader.use();
-//            glActiveTexture(GL_TEXTURE0);
-//            glBindTexture(GL_TEXTURE_2D, colorBuffer);
-//            hdrShader.setInt("hdr", hdr);
-//            hdrShader.setFloat("exposure", exposure);
-//            renderQuad();
+            glBindFramebuffer(GL_FRAMEBUFFER, 0);
+            bool horizontal = true, first_iteration = true;
+            unsigned int amount1 = 10;
+            blurShader.use();
+            for (unsigned int i = 0; i < amount1; i++)
+            {
+                glBindFramebuffer(GL_FRAMEBUFFER, pingpongFBO[horizontal]);
+                blurShader.setInt("horizontal", horizontal);
+                glBindTexture(GL_TEXTURE_2D_MULTISAMPLE, first_iteration ? colorBuffers[1] : pingpongColorbuffers[!horizontal]);  // bind texture of other framebuffer (or scene if first iteration)
+                renderQuad();
+                horizontal = !horizontal;
+                if (first_iteration)
+                    first_iteration = false;
+            }
 
             glBindFramebuffer(GL_FRAMEBUFFER, 0);
             glClearColor(programState->clearColor.r, programState->clearColor.g, programState->clearColor.b, 1.0f);
@@ -705,16 +735,19 @@ int main() {
             screenShader.setBool("grayscaleEnabled", programState->grayscaleEnabled);
 
             screenShader.setInt("hdr", hdr);
+            screenShader.setInt("bloom", bloom);
             screenShader.setFloat("exposure", exposure);
 
             glBindVertexArray(screenVAO);
             glActiveTexture(GL_TEXTURE0);
-            glBindTexture(GL_TEXTURE_2D_MULTISAMPLE, hdrColorBuffer);
+            glBindTexture(GL_TEXTURE_2D_MULTISAMPLE, colorBuffers[0]);
             glActiveTexture(GL_TEXTURE1);
+            glBindTexture(GL_TEXTURE_2D_MULTISAMPLE, pingpongColorbuffers[!horizontal]);
+            glActiveTexture(GL_TEXTURE2);
             glBindTexture(GL_TEXTURE_2D_MULTISAMPLE, textureColorBufferMultiSampled);
             glDrawArrays(GL_TRIANGLES, 0, 6);
 
-            std::cout << "hdr: " << (hdr ? "on" : "off") << "| exposure: " << exposure << std::endl;
+            //std::cout << "hdr: " << (hdr ? "on" : "off") << "| exposure: " << exposure << std::endl;
             // *************************************************************************************************************
         }
 

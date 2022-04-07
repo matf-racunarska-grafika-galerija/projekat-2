@@ -5,12 +5,14 @@ in vec2 TexCoords;
 
 uniform sampler2DMS screenTexture;
 uniform sampler2DMS hdrBuffer;
+uniform sampler2DMS bloomBlur;
 
 uniform bool grayscaleEnabled;
 uniform float SCR_WIDTH;
 uniform float SCR_HEIGHT;
 
 uniform bool hdr;
+uniform bool bloom;
 uniform float exposure;
 
 void main()
@@ -30,6 +32,16 @@ void main()
     sample3 = texelFetch(hdrBuffer, coord, 3).rgb;
 
     vec3 hdrColor = 0.25 * (sample0 + sample1 + sample2 + sample3);
+
+    sample0 = texelFetch(bloomBlur, coord, 0).rgb;
+    sample1 = texelFetch(bloomBlur, coord, 1).rgb;
+    sample2 = texelFetch(bloomBlur, coord, 2).rgb;
+    sample3 = texelFetch(bloomBlur, coord, 3).rgb;
+
+    vec3 bloomColor = 0.25 * (sample0 + sample1 + sample2 + sample3);
+
+    if(bloom)
+        hdrColor += bloomColor;
 
     vec3 hdrResult;
     if(hdr)
