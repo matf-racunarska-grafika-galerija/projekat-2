@@ -175,7 +175,10 @@ unsigned int setupTallGrass(unsigned int &amount)
     return tallgrassVAO;
 }
 
-unsigned int setupPostProcessing(unsigned int &framebuffer, unsigned int &textureColorBufferMultiSampled, unsigned int colorBuffers[2], const unsigned int SCR_WIDTH, const unsigned int SCR_HEIGHT)
+unsigned int setupPostProcessing(unsigned int &framebuffer, unsigned int &textureColorBufferMultiSampled,
+                                 unsigned int colorBuffers[2], unsigned int pingpongFBO[2],
+                                 unsigned int pingpongColorbuffers[2],
+                                 const unsigned int SCR_WIDTH, const unsigned int SCR_HEIGHT)
 {
     float quadVertices[] = {
             // positions            // texCoords
@@ -231,7 +234,25 @@ unsigned int setupPostProcessing(unsigned int &framebuffer, unsigned int &textur
     glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_RENDERBUFFER, rbo);
 
     if(glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
-        std::cerr << "setupAntiAliasing::ERROR::FRAMEBUFFER Framebuffer is not complete!\n";
+        std::cerr << "setupPostProcessing::ERROR::FRAMEBUFFER Framebuffer is not complete!\n";
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+    glGenFramebuffers(2, pingpongFBO);
+    glGenTextures(2, pingpongColorbuffers);
+    for (unsigned int i = 0; i < 2; i++)
+    {
+        glBindFramebuffer(GL_FRAMEBUFFER, pingpongFBO[i]);
+        glBindTexture(GL_TEXTURE_2D_MULTISAMPLE, pingpongColorbuffers[i]);
+        glTexImage2DMultisample(GL_TEXTURE_2D_MULTISAMPLE, 4, GL_RGBA16F, SCR_WIDTH, SCR_HEIGHT, GL_TRUE);
+        glTexParameteri(GL_TEXTURE_2D_MULTISAMPLE, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D_MULTISAMPLE, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D_MULTISAMPLE, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE); // we clamp to the edge as the blur filter would otherwise sample repeated texture values!
+        glTexParameteri(GL_TEXTURE_2D_MULTISAMPLE, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D_MULTISAMPLE, pingpongColorbuffers[i], 0);
+        // also check if framebuffers are complete (no need for depth buffer)
+        if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
+            std::cerr << "setupPostProcessing::ERROR::FRAMEBUFFER PingPong Framebuffer is not complete!\n";
+    }
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
     return quadVAO;

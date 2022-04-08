@@ -74,7 +74,7 @@ void main()
         discard;
 
     vec3 result = CalcDirLight(dirLight, normal, viewDir);
-    result += CalcPointLight(pointLight, normal, fs_in.FragPos, viewDir);
+   // result += CalcPointLight(pointLight, normal, fs_in.FragPos, viewDir);
     result += CalcSpotLight(lampa, normal, fs_in.FragPos, viewDir);
     result += CalcSpotLight(flickeringLight, normal, fs_in.FragPos, viewDir);
     result += CalcSpotLight(tvLight, normal, fs_in.FragPos, viewDir);

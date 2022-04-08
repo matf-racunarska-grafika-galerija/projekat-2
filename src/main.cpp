@@ -49,12 +49,15 @@ std::vector<float> flickerMode(4);
 float flickerAccTime = 0.0f;
 float flickerCycleTime = 1.0f;
 int mode = 0;
+float lastChange = 0.0f;
 
 void updateFlickering();
+bool oneSecondPassed(float lastChange);
 
 struct ProgramState {
     glm::vec3 clearColor = glm::vec3(0);
     bool ImGuiEnabled = false;
+    bool exposureWindowEnabled = true;
     Camera camera;
     bool CameraMouseMovementUpdateEnabled = true;
     bool spotlight = true;
@@ -139,7 +142,7 @@ int main() {
         return -1;
     }
     glfwMakeContextCurrent(window);
-    //glfwSwapInterval( 0 );
+    glfwSwapInterval( 0 );
     glfwSetWindowAspectRatio(window, 4, 3); // dozvoljava da prozor menja velicinu, ali cuva 4:3 odnos
 
     // glfw callbacks setup
@@ -235,6 +238,9 @@ int main() {
     Model zombieModel("resources/objects/zombie/zombie.obj");
     zombieModel.SetShaderTextureNamePrefix("material.");
 
+    Model signModel("resources/objects/sign/sign.obj");
+    signModel.SetShaderTextureNamePrefix("material.");
+
     stbi_set_flip_vertically_on_load(true);
 
     unsigned int podlogaVAO = setupFloorPlane();
@@ -248,26 +254,11 @@ int main() {
     // Anti-aliasing i HDR
     unsigned int framebuffer, textureColorBufferMultiSampled;
     unsigned int colorBuffers[2];
-    unsigned int screenVAO = setupPostProcessing(framebuffer, textureColorBufferMultiSampled, colorBuffers, SCR_WIDTH, SCR_HEIGHT);
-
     unsigned int pingpongFBO[2];
     unsigned int pingpongColorbuffers[2];
-    glGenFramebuffers(2, pingpongFBO);
-    glGenTextures(2, pingpongColorbuffers);
-    for (unsigned int i = 0; i < 2; i++)
-    {
-        glBindFramebuffer(GL_FRAMEBUFFER, pingpongFBO[i]);
-        glBindTexture(GL_TEXTURE_2D_MULTISAMPLE, pingpongColorbuffers[i]);
-        glTexImage2DMultisample(GL_TEXTURE_2D_MULTISAMPLE, 4, GL_RGBA16F, SCR_WIDTH, SCR_HEIGHT, GL_TRUE);
-        glTexParameteri(GL_TEXTURE_2D_MULTISAMPLE, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-        glTexParameteri(GL_TEXTURE_2D_MULTISAMPLE, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-        glTexParameteri(GL_TEXTURE_2D_MULTISAMPLE, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE); // we clamp to the edge as the blur filter would otherwise sample repeated texture values!
-        glTexParameteri(GL_TEXTURE_2D_MULTISAMPLE, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D_MULTISAMPLE, pingpongColorbuffers[i], 0);
-        // also check if framebuffers are complete (no need for depth buffer)
-        if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
-            std::cout << "Framebuffer not complete!" << std::endl;
-    }
+    unsigned int screenVAO = setupPostProcessing(framebuffer, textureColorBufferMultiSampled, colorBuffers,
+                                                 pingpongFBO, pingpongColorbuffers, SCR_WIDTH, SCR_HEIGHT);
+
 
     unsigned int gPosition, gNormal, gAlbedoSpec;
     unsigned int gBuffer = setupGBuffer(gPosition, gNormal, gAlbedoSpec, SCR_WIDTH, SCR_HEIGHT);
@@ -355,7 +346,7 @@ int main() {
 
         glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-        
+
 
         if(programState->introComplete == false)
         {
@@ -524,13 +515,13 @@ int main() {
         objShader.setVec3("dirLight.diffuse", 0.05f, 0.05f, 0.05);   //privremeno samo za hdr
         objShader.setVec3("dirLight.specular", 0.2f, 0.2f, 0.2f);
 
-        objShader.setVec3("pointLight.position", lightPos);
-        objShader.setVec3("pointLight.ambient", glm::vec3(0.0f));
-        objShader.setVec3("pointLight.diffuse", 13.0f, 0.0f, 0.0f);
-        objShader.setVec3("pointLight.specular", 0.2f, 0.2f, 0.2f);
-        objShader.setFloat("pointLight.constant", 1.0f);
-        objShader.setFloat("pointLight.linear", 0.09f);
-        objShader.setFloat("pointLight.quadratic", 0.032f);
+//        objShader.setVec3("pointLight.position", lightPos);
+//        objShader.setVec3("pointLight.ambient", glm::vec3(0.0f));
+//        objShader.setVec3("pointLight.diffuse", 13.0f, 0.0f, 0.0f);
+//        objShader.setVec3("pointLight.specular", 0.2f, 0.2f, 0.2f);
+//        objShader.setFloat("pointLight.constant", 1.0f);
+//        objShader.setFloat("pointLight.linear", 0.09f);
+//        objShader.setFloat("pointLight.quadratic", 0.032f);
 
         // spotlight - baterijska lampa
         objShader.setVec3("lampa.position", programState->camera.Position + 0.35f * programState->camera.Front + 0.07f * programState->camera.Right - 0.08f * programState->camera.Up);
@@ -610,6 +601,15 @@ int main() {
         model = glm::scale(model, glm::vec3(0.25f, 0.15f, 0.45f));
         objShader.setMat4("model", model);
         stoolModel.Draw(objShader);
+
+        // renderovanje znaka:
+        model = glm::mat4(1.0f);
+        model = glm::translate(model, glm::vec3(1.875f, 0.0f, -41.07f));
+        model = glm::rotate(model, glm::radians(5.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+        model = glm::rotate(model, glm::radians(-15.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+        model = glm::scale(model, glm::vec3(30.0f));
+        objShader.setMat4("model", model);
+        signModel.Draw(objShader);
 
 
         // renderovanje kuca:
@@ -738,12 +738,12 @@ int main() {
         renderCube();
 
             // point light kocka
-        model = glm::mat4(1.0f);
-        model = glm::translate(model, lightPos);
-        model = glm::scale(model, glm::vec3(0.5f));
-        shaderLightBox.setMat4("model", model);
-        shaderLightBox.setVec3("lightColor", glm::vec3(13.0f, 0.0f, 0.0f));
-        renderCube();
+//        model = glm::mat4(1.0f);
+//        model = glm::translate(model, lightPos);
+//        model = glm::scale(model, glm::vec3(0.5f));
+//        shaderLightBox.setMat4("model", model);
+//        shaderLightBox.setVec3("lightColor", glm::vec3(13.0f, 0.0f, 0.0f));
+//        renderCube();
 
         //object rendering end, start of skybox rendering
         skyboxShader.use();
@@ -811,7 +811,7 @@ int main() {
             // *************************************************************************************************************
         }
 
-        if (programState->ImGuiEnabled)
+        if (programState->ImGuiEnabled || programState->exposureWindowEnabled)
             DrawImGui(programState);
 
         // glfw: swap buffers and poll IO events (keys pressed/released, mouse moved etc.)
@@ -854,14 +854,14 @@ void processInput(GLFWwindow *window) {
 
     if (glfwGetKey(window, GLFW_KEY_Q) == GLFW_PRESS)
     {
-        if (exposure > 0.0f)
-             exposure -= 0.01f;
+        if (exposure > 0.25f)
+             exposure -= 0.005f;
         else
-            exposure = 0.0f;
+            exposure = 0.25f;
     }
     else if (glfwGetKey(window, GLFW_KEY_E) == GLFW_PRESS)
     {
-        exposure += 0.01f;
+        exposure += 0.005f;
     }
 
     if (glfwGetKey(window, GLFW_KEY_B) == GLFW_PRESS && !bloomKeyPressed)
@@ -965,15 +965,6 @@ void key_callback(GLFWwindow *window, int key, int scancode, int action, int mod
 
     if (key == GLFW_KEY_F3 && action == GLFW_PRESS)
         programState->grayscaleEnabled = !programState->grayscaleEnabled;
-
-
-    // reset the camera to default position
-    if (key == GLFW_KEY_P && action == GLFW_PRESS) {
-        programState->camera.Position = glm::vec3(0.0f, 0.0f, 3.0f);
-        programState->camera.Yaw = -90.0f;
-        programState->camera.Pitch = 0.0f;
-        programState->camera.Front = glm::vec3(0.0f, 0.0f, -1.0f);
-    }
 }
 
 void DrawImGui(ProgramState *programState) {
@@ -981,51 +972,80 @@ void DrawImGui(ProgramState *programState) {
     ImGui_ImplGlfw_NewFrame();
     ImGui::NewFrame();
 
-    {
-        ImGui::SetNextWindowPos(ImVec2(0,0));
-        ImGui::SetNextWindowSize(ImVec2(500, 150));
-        ImGui::Begin("Settings:");
-        ImGui::DragFloat("Ambient Light Strength", (float *) &programState->whiteAmbientLightStrength, 0.005f, 0.05f, 1.0f);
-        ImGui::DragFloat3("Backpack position", (float*)&programState->tempPosition);
-        ImGui::DragFloat("Backpack scale", &programState->tempScale, 0.05, 0.1, 4.0);
-        ImGui::End();
+    if(programState->ImGuiEnabled) {
+        {
+            ImGui::SetNextWindowPos(ImVec2(0, 0));
+            ImGui::SetNextWindowSize(ImVec2(600, 130), ImGuiCond_Once);
+            ImGui::Begin("Camera settings");
+            const Camera &c = programState->camera;
+            ImGui::Text("Camera Info:");
+            ImGui::Indent();
+            ImGui::Bullet();
+            ImGui::Text("Camera position: (%f, %f, %f)", c.Position.x, c.Position.y, c.Position.z);
+            ImGui::Bullet();
+            ImGui::Text("(Yaw, Pitch): (%f, %f)", c.Yaw, c.Pitch);
+            ImGui::Bullet();
+            ImGui::Text("Camera front: (%f, %f, %f)", c.Front.x, c.Front.y, c.Front.z);
+            ImGui::Unindent();
+            ImGui::Spacing();
+            ImGui::Spacing();
+            ImGui::Text("Toggle camera movement on/off: C");
+            ImGui::End();
+        }
+
+        {
+            ImGui::SetNextWindowPos(ImVec2(0, 170));
+            ImGui::SetNextWindowSize(ImVec2(600, 100));
+            ImGui::Begin("General settings:");
+            ImGui::Bullet();
+            ImGui::DragFloat("Movement Speed", (float *) &programState->camera.MovementSpeed, 0.5f, 2.5f, 100.0f);
+            ImGui::Bullet();
+            ImGui::DragFloat("Ambient Light Strength", (float *) &programState->whiteAmbientLightStrength, 0.005f,
+                             0.05f, 1.0f);
+            ImGui::Bullet();
+            ImGui::Text("Toggle flashlight on/off: RMB (Right Click)");
+            ImGui::End();
+        }
+
+        {
+            ImGui::SetNextWindowPos(ImVec2(0, 320));
+            ImGui::SetNextWindowSize(ImVec2(600, 150), ImGuiCond_Once);
+            ImGui::Begin("Post-Processing settings");
+            ImGui::Checkbox("Anti-Aliasing (shortcut: F2)", &programState->AAEnabled);
+            ImGui::Checkbox("Grayscale (shortcut: F3)", &programState->grayscaleEnabled);
+            ImGui::Checkbox("HDR (shortcut: H)", &hdr);
+            ImGui::Checkbox("Bloom (shortcut: B)", &bloom);
+            ImGui::Spacing();
+            ImGui::Bullet();
+            ImGui::DragFloat("Exposure", &exposure, 0.05f, 0.25f, 4.0f);
+            ImGui::End();
+        }
+
+        {
+            ImGui::SetNextWindowBgAlpha(0.35f);
+            ImGui::SetNextWindowPos(ImVec2(SCR_WIDTH - 60, 0), ImGuiCond_Once);
+            ImGui::SetNextWindowSize(ImVec2(60, 50));
+            ImGui::Begin("FPS:");
+            ImGui::Text(("%.2f"), floor(1 / deltaTime));
+            ImGui::End();
+        }
     }
 
+    if(programState->exposureWindowEnabled)
     {
-        ImGui::SetNextWindowPos(ImVec2(0,200));
-        ImGui::SetNextWindowSize(ImVec2(500, 150), ImGuiCond_Once);
-        ImGui::Begin("Camera info");
-        const Camera& c = programState->camera;
-        ImGui::Text("Camera position: (%f, %f, %f)", c.Position.x, c.Position.y, c.Position.z);
-        ImGui::Text("(Yaw, Pitch): (%f, %f)", c.Yaw, c.Pitch);
-        ImGui::Text("Camera front: (%f, %f, %f)", c.Front.x, c.Front.y, c.Front.z);
-        ImGui::Spacing();
-        ImGui::Bullet();
-        ImGui::Text("Toggle camera movement on/off: C");
-        ImGui::Bullet();
-        ImGui::Text("Reset camera position: P");
-        ImGui::Bullet();
-        ImGui::Text("Toggle flashlight on/off: RMB (Right Click)");
-        ImGui::DragFloat("Camera Movement Speed", (float *) &c.MovementSpeed, 0.5f, 2.5f, 100.0f);
-        ImGui::End();
-    }
+        {
+            ImGui::SetNextWindowPos(ImVec2(550, 0));
+            ImGui::SetNextWindowSize(ImVec2(70, 50), ImGuiCond_Always);
+            if(ImGui::IsKeyPressed(GLFW_KEY_Q) || ImGui::IsKeyPressed(GLFW_KEY_E))
+                lastChange = glfwGetTime();
 
-    {
-        ImGui::SetNextWindowPos(ImVec2(0,400));
-        ImGui::SetNextWindowSize(ImVec2(500, 150), ImGuiCond_Once);
-        ImGui::Begin("Anti-aliasing settings");
-        ImGui::Checkbox("Anti-Aliasing (shortcut: F2)", &programState->AAEnabled);
-        ImGui::Checkbox("Grayscale (shortcut: F3)", &programState->grayscaleEnabled);
-        ImGui::End();
-    }
-
-    {
-        ImGui::SetNextWindowBgAlpha(0.35f);
-        ImGui::SetNextWindowPos(ImVec2(SCR_WIDTH - 60,0), ImGuiCond_Once);
-        ImGui::SetNextWindowSize(ImVec2(60, 50));
-        ImGui::Begin("FPS:");
-        ImGui::Text(("%.2f"), floor(1/deltaTime));
-        ImGui::End();
+            if(ImGui::IsKeyDown(GLFW_KEY_Q) || ImGui::IsKeyDown(GLFW_KEY_E) || !oneSecondPassed(lastChange))
+            {
+                ImGui::Begin("EXPOSURE", NULL, ImGuiWindowFlags_NoCollapse);
+                    ImGui::Text("%.3f", exposure);
+                ImGui::End();
+            }
+        }
     }
 
     ImGui::Render();
@@ -1155,6 +1175,14 @@ void updateFlickering()
     flickerMode[3] = 0.0f;
     flickerMode[4] = 1.0f;
 }
+
+bool oneSecondPassed(float lastChange)
+{
+    if(glfwGetTime() - lastChange > 1.0f)
+        return true;
+    return false;
+}
+
 
 glm::mat4 CalcFlashlightPosition() {
     Camera c = programState->camera;
