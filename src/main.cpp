@@ -720,9 +720,9 @@ int main() {
             glBindFramebuffer(GL_FRAMEBUFFER, 0);
             glBindVertexArray(screenVAO);
             bool horizontal = true, first_iteration = true;
-            unsigned int amount1 = 10;
+            unsigned int NR_BLUR_ITERATIONS = 10;
             blurShader.use();
-            for (unsigned int i = 0; i < amount1; i++)
+            for (unsigned int i = 0; i < NR_BLUR_ITERATIONS; i++)
             {
                 glBindFramebuffer(GL_FRAMEBUFFER, pingpongFBO[horizontal]);
                 blurShader.setInt("horizontal", horizontal);
