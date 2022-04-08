@@ -56,6 +56,7 @@ uniform DirLight dirLight;
 uniform Material material;
 uniform Spotlight lampa;
 uniform Spotlight flickeringLight;
+uniform Spotlight tvLight;
 uniform vec3 viewPosition;
 
 vec3 CalcDirLight(DirLight light, vec3 normal, vec3 viewDir);
@@ -76,6 +77,7 @@ void main()
     result += CalcPointLight(pointLight, normal, fs_in.FragPos, viewDir);
     result += CalcSpotLight(lampa, normal, fs_in.FragPos, viewDir);
     result += CalcSpotLight(flickeringLight, normal, fs_in.FragPos, viewDir);
+    result += CalcSpotLight(tvLight, normal, fs_in.FragPos, viewDir);
 
     float brightness = dot(result, vec3(0.2126, 0.7152, 0.0722));
     if(brightness > 1.0)

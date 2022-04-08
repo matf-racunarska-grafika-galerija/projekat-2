@@ -33,6 +33,7 @@ bool bloom = true;
 bool hdrKeyPressed = false;
 bool bloomKeyPressed = false;
 float exposure = 1.0f;
+glm::vec3 zombiePos = glm::vec3(100.0f, -3.0f, 100.0f);
 
 // camera
 float lastX = SCR_WIDTH / 2.0f;
@@ -63,6 +64,8 @@ struct ProgramState {
     bool introComplete = false;
     bool enabledKeyboardInput = false;
     bool enabledMouseInput = false;
+    bool showZombie = false;
+    bool zombieRendered = false;
 
     ProgramState()
             : camera(glm::vec3((-0.8f, 1.0f, 150.0f))) {}
@@ -110,6 +113,7 @@ ProgramState *programState;
 void DrawImGui(ProgramState *programState);
 
 glm::mat4 CalcFlashlightPosition();
+glm::vec3 CalcZombiePosition();
 
 unsigned int loadCubeMap(vector<std::string> faces);
 void renderQuad();
@@ -186,6 +190,7 @@ int main() {
     Shader shaderLightBox("resources/shaders/deferredLightShow.vs", "resources/shaders/deferredLightShow.fs");
     Shader instancedGrass("resources/shaders/instancedGrass.vs", "resources/shaders/instancedGrass.fs");
     Shader blurShader("resources/shaders/blur.vs", "resources/shaders/blur.fs");
+    Shader tvScreenShader("resources/shaders/tvScreen.vs", "resources/shaders/tvScreen.fs");
 
     // load models
     Model ourModel("resources/objects/backpack/backpack.obj");
@@ -227,8 +232,10 @@ int main() {
     Model stoolModel("resources/objects/tv/wooden stool.obj");
     stoolModel.SetShaderTextureNamePrefix(".material");
 
-    stbi_set_flip_vertically_on_load(true);
+    Model zombieModel("resources/objects/zombie/zombie.obj");
+    zombieModel.SetShaderTextureNamePrefix("material.");
 
+    stbi_set_flip_vertically_on_load(true);
 
     unsigned int podlogaVAO = setupFloorPlane();
 
@@ -268,6 +275,7 @@ int main() {
     // load textures
     unsigned int podlogaDiffuseMap = TextureFromFile("grass_diffuse.png", "resources/textures");
     unsigned int podlogaSpecularMap = TextureFromFile("grass_specular.png", "resources/textures");
+    unsigned int tvScreenTexture = TextureFromFile("tv_screen.png", "resources/textures");
     unsigned int tallgrassTexture = TextureFromFile("grass.png", "resources/textures");
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
@@ -291,6 +299,9 @@ int main() {
     shaderLightingPass.setInt("gPosition", 0);
     shaderLightingPass.setInt("gNormal", 1);
     shaderLightingPass.setInt("gAlbedoSpec", 2);
+
+    tvScreenShader.use();
+    tvScreenShader.setInt("slika", 0);
 
     // ostale konfiguracije i inicijalizacije
     glm::vec3 lightPos(-5.0f, 4.0f, -5.0f); // pozicija point lighta
@@ -344,6 +355,7 @@ int main() {
 
         glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+        
 
         if(programState->introComplete == false)
         {
@@ -505,8 +517,7 @@ int main() {
         view = programState->camera.GetViewMatrix();
         objShader.setMat4("projection", projection);
         objShader.setMat4("view", view);
-
-
+        
         // directional light
         objShader.setVec3("dirLight.direction", -0.2f, -1.0f, -0.3f);
         objShader.setVec3("dirLight.ambient", glm::vec3(programState->whiteAmbientLightStrength));
@@ -520,22 +531,14 @@ int main() {
         objShader.setFloat("pointLight.constant", 1.0f);
         objShader.setFloat("pointLight.linear", 0.09f);
         objShader.setFloat("pointLight.quadratic", 0.032f);
-        shaderLightBox.use();
-        model = glm::mat4(1.0f);
-        model = glm::translate(model, lightPos);
-        model = glm::scale(model, glm::vec3(0.5f));
-        shaderLightBox.setMat4("model", model);
-        shaderLightBox.setVec3("lightColor", glm::vec3(13.0f, 0.0f, 0.0f));
-        renderCube();
 
-        objShader.use();
         // spotlight - baterijska lampa
         objShader.setVec3("lampa.position", programState->camera.Position + 0.35f * programState->camera.Front + 0.07f * programState->camera.Right - 0.08f * programState->camera.Up);
         objShader.setVec3("lampa.direction", programState->camera.Front);
         objShader.setVec3("lampa.ambient", 0.0f, 0.0f, 0.0f);
         if(programState->spotlight) {
-            objShader.setVec3("lampa.diffuse", 1.0f, 1.0f, 1.0f);
-            objShader.setVec3("lampa.specular", 1.0f, 1.0f, 1.0f);
+            objShader.setVec3("lampa.diffuse", 3.0f, 3.0f, 3.0f);
+            objShader.setVec3("lampa.specular", glm::vec3(0.2f));
         }
         else {
             objShader.setVec3("lampa.diffuse", 0.0f, 0.0f, 0.0f);
@@ -558,17 +561,20 @@ int main() {
         objShader.setFloat("flickeringLight.quadratic", 0.032f);
         objShader.setFloat("flickeringLight.cutOff", glm::cos(glm::radians(15.0f)));
         objShader.setFloat("flickeringLight.outerCutOff", glm::cos(glm::radians(30.0f)));
-        model = glm::mat4(1.0f);
-        model = glm::translate(model, lightPositions[0]);
-        model = glm::scale(model, glm::vec3(0.38f, 0.1f, 0.28f));
-        shaderLightBox.use();
-        shaderLightBox.setMat4("model", model);
-        shaderLightBox.setMat4("projection", projection);
-        shaderLightBox.setMat4("view", view);
-        shaderLightBox.setVec3("lightColor", flickerMode[mode] * glm::vec3(1.0f, 1.0f, 0.7f));
-        renderCube();
+        
+        // spotlight - svetlo tv-a
+        objShader.setVec3("tvLight.position", glm::vec3(2.0f, 0.635f, -39.8f));
+        objShader.setVec3("tvLight.direction", glm::vec3(-1.0f, 0.0f, 1.0f));
+        objShader.setVec3("tvLight.ambient", 0.02f, 0.02f, 0.02f);
+        objShader.setVec3("tvLight.diffuse",  glm::vec3(10.0f, 10.0f, 10.0f));
+        objShader.setVec3("tvLight.specular", 1.0f, 1.0f, 1.0f);
+        objShader.setFloat("tvLight.constant", 1.0f);
+        objShader.setFloat("tvLight.linear", 0.9f);
+        objShader.setFloat("tvLight.quadratic", 0.032f);
+        objShader.setFloat("tvLight.cutOff", glm::cos(glm::radians(45.0f)));
+        objShader.setFloat("tvLight.outerCutOff", glm::cos(glm::radians(60.0f)));
 
-        objShader.use();
+
         if(programState->introComplete) {
             // renderovanje baterijske lampe:
             model = CalcFlashlightPosition();
@@ -592,17 +598,19 @@ int main() {
         objShader.setMat4("model", model);
         roadStopModel.Draw(objShader);
 
-        // renderovanje tv-a:
+        // renderovanje TV-a:
         model = glm::mat4(1.0f);
-        model = glm::translate(model,programState->tempPosition);
-        model = glm::scale(model, glm::vec3(programState->tempScale));
+        model = glm::translate(model,glm::vec3(2.0f, 0.625f, -40.0f));
+        model = glm::rotate(model, glm::radians(-135.0f), glm::vec3(0.0f, 1.0f, 0.0f));
         objShader.setMat4("model", model);
         tvModel.Draw(objShader);
         model = glm::mat4(1.0f);
-        model = glm::translate(model,programState->tempPosition - glm::vec3(0.0f, 0.625f, 0.13f));
-        model = glm::scale(model, glm::vec3(0.25f, 0.15f, 0.35f));
+        model = glm::translate(model,glm::vec3(2.0f, 0.0f, -40.0f));
+        model = glm::rotate(model, glm::radians(-135.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+        model = glm::scale(model, glm::vec3(0.25f, 0.15f, 0.45f));
         objShader.setMat4("model", model);
         stoolModel.Draw(objShader);
+
 
         // renderovanje kuca:
         model = glm::mat4(1.0f);
@@ -617,6 +625,14 @@ int main() {
         model = glm::rotate(model, glm::radians(90.0f), glm::vec3(0.0f, 1.0f, 0.0f));
         objShader.setMat4("model", model);
         cottageHouseModel2.Draw(objShader);
+
+        // renderovanje zombija:
+        model = glm::mat4(1.0f);
+        model = glm::translate(model, CalcZombiePosition());
+        model = glm::rotate(model, glm::radians(130.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+        model = glm::scale(model, glm::vec3(0.03f));
+        objShader.setMat4("model", model);
+        zombieModel.Draw(objShader);
 
         glDisable(GL_CULL_FACE);
 
@@ -694,6 +710,40 @@ int main() {
         glBindVertexArray(0);
 
         glEnable(GL_CULL_FACE);
+
+        // renderovanje svetlecih kutija:
+        tvScreenShader.use();
+            // svetlo tv-a
+        model = glm::mat4(1.0f);
+        model = glm::translate(model, glm::vec3(2.02f, 0.82f, -40.1f) + glm::vec3(-0.077f, 0.0f, 0.282f));
+        model = glm::rotate(model, glm::radians(-135.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+        model = glm::scale(model, glm::vec3(0.05f, 0.216f, 0.34f));
+        tvScreenShader.setMat4("model", model);
+        tvScreenShader.setMat4("projection", projection);
+        tvScreenShader.setMat4("view", view);
+        tvScreenShader.setVec3("lightColor", glm::vec3(12.0f, 12.0f, 10.0f));
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, tvScreenTexture);
+        renderCube();
+
+        shaderLightBox.use();
+            // bandera
+        model = glm::mat4(1.0f);
+        model = glm::translate(model, lightPositions[0]);
+        model = glm::scale(model, glm::vec3(0.38f, 0.1f, 0.28f));
+        shaderLightBox.setMat4("model", model);
+        shaderLightBox.setMat4("projection", projection);
+        shaderLightBox.setMat4("view", view);
+        shaderLightBox.setVec3("lightColor", flickerMode[mode] * glm::vec3(11.0f, 11.0f, 5.0f));
+        renderCube();
+
+            // point light kocka
+        model = glm::mat4(1.0f);
+        model = glm::translate(model, lightPos);
+        model = glm::scale(model, glm::vec3(0.5f));
+        shaderLightBox.setMat4("model", model);
+        shaderLightBox.setVec3("lightColor", glm::vec3(13.0f, 0.0f, 0.0f));
+        renderCube();
 
         //object rendering end, start of skybox rendering
         skyboxShader.use();
@@ -982,18 +1032,7 @@ void DrawImGui(ProgramState *programState) {
     ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 }
 
-glm::mat4 CalcFlashlightPosition() {
-    Camera c = programState->camera;
 
-    glm::mat4 model = glm::mat4(1.0f);
-
-    model = glm::translate(model, c.Position + 0.35f * c.Front + 0.07f * c.Right - 0.08f * c.Up);
-    model = glm::rotate(model, -glm::radians(c.Yaw + 180), c.Up);
-    model = glm::rotate(model, glm::radians(c.Pitch), c.Right);
-    model = glm::scale(model, glm::vec3(0.025f));
-
-    return model;
-}
 
 unsigned int quadVAO = 0;
 unsigned int quadVBO;
@@ -1115,4 +1154,32 @@ void updateFlickering()
     flickerMode[2] = (float)(0.65 - cos(M_PI * (pulseAccTime / pulseCycleTime)) * 0.5);
     flickerMode[3] = 0.0f;
     flickerMode[4] = 1.0f;
+}
+
+glm::mat4 CalcFlashlightPosition() {
+    Camera c = programState->camera;
+
+    glm::mat4 model = glm::mat4(1.0f);
+
+    model = glm::translate(model, c.Position + 0.35f * c.Front + 0.07f * c.Right - 0.08f * c.Up);
+    model = glm::rotate(model, -glm::radians(c.Yaw + 180), c.Up);
+    model = glm::rotate(model, glm::radians(c.Pitch), c.Right);
+    model = glm::scale(model, glm::vec3(0.025f));
+
+    return model;
+}
+
+glm::vec3 CalcZombiePosition()
+{
+    if(programState->zombieRendered)
+        return zombiePos;
+    else if(programState->showZombie)
+    {
+        zombiePos = programState->camera.Position + glm::vec3(-1.2f, 0.0f, 1.2f);
+        programState->zombieRendered = true;
+    }
+    else
+        zombiePos = glm::vec3(100.0f, -3.0f, 100.0f);
+
+    return zombiePos;
 }
