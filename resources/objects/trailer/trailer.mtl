@@ -1,0 +1,64 @@
+# Blender 3.1.0 MTL File: 'old_trailer_blender2.79.blend'
+# www.blender.org
+
+newmtl rock
+Ns 1000.000000
+Ka 1.000000 1.000000 1.000000
+Kd 0.800000 0.800000 0.800000
+Ks 0.466667 0.466667 0.466667
+Ke 0.000000 0.000000 0.000000
+Ni 1.450000
+d 1.000000
+illum 2
+map_Kd  rock_basecolor.png
+map_Ks  rock_roughness.png
+
+
+newmtl top_and_sides
+Ns 1000.000000
+Ka 1.000000 1.000000 1.000000
+Kd 0.800000 0.800000 0.800000
+Ks 0.466667 0.466667 0.466667
+Ke 0.000000 0.000000 0.000000
+Ni 1.450000
+d 1.000000
+illum 2
+map_Kd  top_and_stairs_basecolor.png
+map_Ks  top_and_stairs_roughness.png
+
+newmtl trailer_sides
+Ns 1000.000000
+Ka 1.000000 1.000000 1.000000
+Kd 0.800000 0.800000 0.800000
+Ks 0.466667 0.466667 0.466667
+Ke 0.000000 0.000000 0.000000
+Ni 1.450000
+d 1.000000
+illum 2
+map_Kd  trailer_sides_basecolor.png
+map_Ks  trailer_sides_roughness.png
+
+newmtl tyres_and_support
+Ns 1000.000000
+Ka 1.000000 1.000000 1.000000
+Kd 0.800000 0.800000 0.800000
+Ks 0.466667 0.466667 0.466667
+Ke 0.000000 0.000000 0.000000
+Ni 1.450000
+d 1.000000
+illum 2
+map_Kd  tyres and support_basecolor.png
+map_Ks  tyres and support_roughness.png
+
+newmtl windows
+Ns 1000.000000
+Ka 1.000000 1.000000 1.000000
+Kd 0.800000 0.800000 0.800000
+Ks 0.466667 0.466667 0.466667
+Ke 0.000000 0.000000 0.000000
+Ni 1.450000
+d 1.000000
+illum 2
+map_Kd  windows_basecolor.png
+map_Ks  windows_roughness.png
+

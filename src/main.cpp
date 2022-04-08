@@ -69,6 +69,7 @@ struct ProgramState {
     bool enabledMouseInput = false;
     bool showZombie = false;
     bool zombieRendered = false;
+    bool creativeMode = false;
 
     ProgramState()
             : camera(glm::vec3((-0.8f, 1.0f, 150.0f))) {}
@@ -202,9 +203,6 @@ int main() {
     Model ulicnaSvetiljkaModel("resources/objects/street_lamp/StreetLamp.obj");
     ulicnaSvetiljkaModel.SetShaderTextureNamePrefix("material.");
 
-    Model houseModel("resources/objects/House/House.obj");
-    houseModel.SetShaderTextureNamePrefix("material.");
-
     Model roadModel("resources/objects/road/road.obj");
     roadModel.SetShaderTextureNamePrefix("material.");
 
@@ -240,6 +238,12 @@ int main() {
 
     Model signModel("resources/objects/sign/sign.obj");
     signModel.SetShaderTextureNamePrefix("material.");
+
+    Model dumpModel("resources/objects/dump/dump.obj");
+    dumpModel.SetShaderTextureNamePrefix("material.");
+
+    Model trailerModel("resources/objects/trailer/trailer.obj");
+    trailerModel.SetShaderTextureNamePrefix("material.");
 
     stbi_set_flip_vertically_on_load(true);
 
@@ -316,7 +320,7 @@ int main() {
 
     // pozicije drveca
     srand(9); // lupao sam random seedove dok nisam naisao na neki koji mi se svidja (ne menjaj)
-    const unsigned int NR_TREES = 50;
+    const unsigned int NR_TREES = 35;
     std::vector<glm::vec3> treePos;
     for(int i = 0; i < NR_TREES; i++)
         treePos.push_back(glm::vec3(rand() % 200 - 100, 0.0f, rand() % 200 - 100));
@@ -351,13 +355,14 @@ int main() {
         if(programState->introComplete == false)
         {
             // intro speed
-            programState->camera.Position.z -= 15.0f * deltaTime;
+            programState->camera.Position.z -= 7.0f * deltaTime;
         }
 
         if(programState->introComplete == false && programState->camera.Position.z < 0) {
             programState->enabledKeyboardInput = true;
             programState->enabledMouseInput = true;
             programState->camera.Position.x = -1.5f;
+            programState->camera.Position.y = 1.8f;
             programState->introComplete = true;
         }
 
@@ -576,7 +581,7 @@ int main() {
             model = glm::mat4(1.0f);
             model = glm::translate(model, glm::vec3(0.4f, 0.2f, 1.0f));
             model = glm::rotate(model, glm::radians(-90.0f), glm::vec3(0.0f, 1.0f, 0.0f));
-            model = glm::scale(model, glm::vec3(0.85f));
+            model = glm::scale(model, glm::vec3(0.9f));
             objShader.setMat4("model", model);
             carModel.Draw(objShader);
         }
@@ -614,17 +619,31 @@ int main() {
 
         // renderovanje kuca:
         model = glm::mat4(1.0f);
-        model = glm::translate(model, glm::vec3(15, 0, 15));
-        model = glm::scale(model, glm::vec3(0.3));
+        model = glm::translate(model, glm::vec3(14.0f, 0.0f, 10.0f));
+        model = glm::scale(model, glm::vec3(0.33f));
         objShader.setMat4("model", model);
         cottageHouseModel.Draw(objShader);
 
         model = glm::mat4(1.0f);
-        model = glm::translate(model, glm::vec3(-20, 0.01, -20));
+        model = glm::translate(model, glm::vec3(-20.0f, 0.01f, -20.0f));
         model = glm::scale(model, glm::vec3(0.05f));
         model = glm::rotate(model, glm::radians(90.0f), glm::vec3(0.0f, 1.0f, 0.0f));
         objShader.setMat4("model", model);
         cottageHouseModel2.Draw(objShader);
+
+        // renderovanje deponije:
+        model = glm::mat4(1.0f);
+        model = glm::translate(model, glm::vec3(10.0f, 0.0f, -5.0f));
+        model = glm::rotate(model, glm::radians(15.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+        model = glm::scale(model, glm::vec3(0.12f));
+        objShader.setMat4("model", model);
+        dumpModel.Draw(objShader);
+        model = glm::mat4(1.0f);
+        model = glm::translate(model, glm::vec3(13.5f, 0.06f, -9.0f));
+        model = glm::rotate(model, glm::radians(15.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+        model = glm::scale(model, glm::vec3(0.18f));
+        objShader.setMat4("model", model);
+        trailerModel.Draw(objShader);
 
         // renderovanje zombija:
         model = glm::mat4(1.0f);
@@ -867,7 +886,6 @@ void processInput(GLFWwindow *window) {
     if (glfwGetKey(window, GLFW_KEY_B) == GLFW_PRESS && !bloomKeyPressed)
     {
         bloom = !bloom;
-        std::cerr << "bloom " << (bloom ? "on" : "off") << endl;
         bloomKeyPressed = true;
     }
     if (glfwGetKey(window, GLFW_KEY_B) == GLFW_RELEASE)
@@ -877,6 +895,10 @@ void processInput(GLFWwindow *window) {
 
 
     if(programState->enabledKeyboardInput) {
+
+        if(!programState->creativeMode)         // zakljucava kretanje po y-osi ako nismo u creative modu
+            programState->camera.Position.y = 1.8f;
+
         if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
             programState->camera.ProcessKeyboard(FORWARD, deltaTime);
         if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS)
@@ -885,10 +907,12 @@ void processInput(GLFWwindow *window) {
             programState->camera.ProcessKeyboard(LEFT, deltaTime);
         if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS)
             programState->camera.ProcessKeyboard(RIGHT, deltaTime);
-        if (glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS)
-            programState->camera.ProcessKeyboard(DOWN, deltaTime);
-        if (glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS)
-            programState->camera.ProcessKeyboard(UP, deltaTime);
+        if(programState->creativeMode) {
+            if (glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS)
+                programState->camera.ProcessKeyboard(DOWN, deltaTime);
+            if (glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS)
+                programState->camera.ProcessKeyboard(UP, deltaTime);
+        }
     }
 }
 
@@ -965,6 +989,9 @@ void key_callback(GLFWwindow *window, int key, int scancode, int action, int mod
 
     if (key == GLFW_KEY_F3 && action == GLFW_PRESS)
         programState->grayscaleEnabled = !programState->grayscaleEnabled;
+
+    if (key == GLFW_KEY_N && action == GLFW_PRESS)
+        programState->creativeMode = !programState->creativeMode;
 }
 
 void DrawImGui(ProgramState *programState) {
@@ -995,8 +1022,13 @@ void DrawImGui(ProgramState *programState) {
 
         {
             ImGui::SetNextWindowPos(ImVec2(0, 170));
-            ImGui::SetNextWindowSize(ImVec2(600, 100));
+            ImGui::SetNextWindowSize(ImVec2(600, 135));
             ImGui::Begin("General settings:");
+            ImGui::Bullet();
+            ImGui::Checkbox("Spectator mode (shortcut: N)", &programState->creativeMode);
+            ImGui::SameLine();
+            ImGui::TextColored(ImVec4(0.5, 0.5, 1.0, 1.0), "~ Allows you to move freely across the scene");
+            ImGui::TextColored(ImVec4(1.0, 0.5, 0.5, 1.0), "Note: spectator mode changes will not take effect until intro is complete");
             ImGui::Bullet();
             ImGui::DragFloat("Movement Speed", (float *) &programState->camera.MovementSpeed, 0.5f, 2.5f, 100.0f);
             ImGui::Bullet();
@@ -1008,8 +1040,8 @@ void DrawImGui(ProgramState *programState) {
         }
 
         {
-            ImGui::SetNextWindowPos(ImVec2(0, 320));
-            ImGui::SetNextWindowSize(ImVec2(600, 150), ImGuiCond_Once);
+            ImGui::SetNextWindowPos(ImVec2(0, 350));
+            ImGui::SetNextWindowSize(ImVec2(600, 175), ImGuiCond_Once);
             ImGui::Begin("Post-Processing settings");
             ImGui::Checkbox("Anti-Aliasing (shortcut: F2)", &programState->AAEnabled);
             ImGui::Checkbox("Grayscale (shortcut: F3)", &programState->grayscaleEnabled);
@@ -1018,6 +1050,9 @@ void DrawImGui(ProgramState *programState) {
             ImGui::Spacing();
             ImGui::Bullet();
             ImGui::DragFloat("Exposure", &exposure, 0.05f, 0.25f, 4.0f);
+            ImGui::Spacing();
+            ImGui::Spacing();
+            ImGui::TextColored(ImVec4(1.0, 0.5, 0.5, 1.0), "Note: changes will not take effect until intro is complete");
             ImGui::End();
         }
 
@@ -1033,6 +1068,12 @@ void DrawImGui(ProgramState *programState) {
 
     if(programState->exposureWindowEnabled)
     {
+        {
+            ImGui::SetNextWindowPos(ImVec2(0, SCR_HEIGHT - 25));
+            ImGui::SetNextWindowSize(ImVec2(70, 50), ImGuiCond_Always);
+            ImGui::Begin("Menu: F1", NULL, ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoCollapse);
+            ImGui::End();
+        }
         {
             ImGui::SetNextWindowPos(ImVec2(550, 0));
             ImGui::SetNextWindowSize(ImVec2(70, 50), ImGuiCond_Always);
