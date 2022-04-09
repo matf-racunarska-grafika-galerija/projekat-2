@@ -1,5 +1,10 @@
 # MATF RG ~ ***Rural Mysteries***
 ______________________
+
+![screenshot 7](/resources/screenshots/ss7_bloodless.png)
+
+-------
+
 Projekat napravljen za potrebe kursa *Računarska grafika*, na Matematičkom fakultetu u Beogradu. <br>
 Korišćen je skelet projekta preuzet sa `https://github.com/matf-racunarska-grafika/project_base.git`. <br>
 Pravljeno uz pomoć materijala sa [learnopengl](https://learnopengl.com/). <br>
@@ -48,6 +53,7 @@ U fazi ***istraživanja***, moguće je slobodno kretanje po sceni, kao i podeša
       - `B` - uključuje/isključuje [*Bloom*](https://learnopengl.com/Advanced-Lighting/Bloom) efekat
       - `Q` - smanjuje *exposure* parametar
       - `E` - povećava *exposure* parametar
+      - `F4 - F7` - *kernel* efekti - *sharpen, blur, edge i ridge detection*
   - *Ostala podešavanja:*
     - `N` - uključivanje/isključivanje ***Spectator*** moda:
       - `SPACE` - kretanje na gore
@@ -55,6 +61,7 @@ U fazi ***istraživanja***, moguće je slobodno kretanje po sceni, kao i podeša
     - `RMB` - (desni klik) - uključivanje/isključivanje svetla na baterijskoj lampi
     - `C` - podešavanje vidljivosti kursora i zaključavanje kretanja kamere dok je otvoren meni
 
+  
 
 ## Resursi
 Svi resursi se mogu naći u ***resources*** direktorijumu. <br>

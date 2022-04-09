@@ -55,6 +55,14 @@ float lastChange = 0.0f;
 void updateFlickering();
 bool oneSecondPassed(float lastChange);
 
+// kernels
+bool sharpenKernelEnabled = false;
+bool blurKernelEnabled = false;
+bool edgeDetectionKernelEnabled = false;
+bool ridgeDetectionKernelEnabled = false;
+
+void disableAllKernelEffects();
+
 struct ProgramState {
     bool ImGuiEnabled = false;
     bool exposureWindowEnabled = true;
@@ -816,6 +824,11 @@ int main() {
             screenShader.setBool("bloom", bloom);
             screenShader.setFloat("exposure", exposure);
 
+            screenShader.setBool("sharpenKernelEnabled", sharpenKernelEnabled);
+            screenShader.setBool("blurKernelEnabled", blurKernelEnabled);
+            screenShader.setBool("edgeDetectionKernelEnabled", edgeDetectionKernelEnabled);
+            screenShader.setBool("ridgeDetectionKernelEnabled", ridgeDetectionKernelEnabled);
+
             glActiveTexture(GL_TEXTURE0);
             glBindTexture(GL_TEXTURE_2D_MULTISAMPLE, colorBuffers[0]);
             glActiveTexture(GL_TEXTURE1);
@@ -990,6 +1003,29 @@ void key_callback(GLFWwindow *window, int key, int scancode, int action, int mod
 
     if (key == GLFW_KEY_N && action == GLFW_PRESS)
         programState->creativeMode = !programState->creativeMode;
+
+
+    // kernel effects key callbacks:
+    if (key == GLFW_KEY_F4 && action == GLFW_PRESS) {
+        if(!sharpenKernelEnabled)
+            disableAllKernelEffects();
+        sharpenKernelEnabled = !sharpenKernelEnabled;
+    }
+    if (key == GLFW_KEY_F5 && action == GLFW_PRESS) {
+        if(!blurKernelEnabled)
+            disableAllKernelEffects();
+        blurKernelEnabled = !blurKernelEnabled;
+    }
+    if (key == GLFW_KEY_F6 && action == GLFW_PRESS) {
+        if(!edgeDetectionKernelEnabled)
+            disableAllKernelEffects();
+        edgeDetectionKernelEnabled = !edgeDetectionKernelEnabled;
+    }
+    if (key == GLFW_KEY_F7 && action == GLFW_PRESS) {
+        if(!ridgeDetectionKernelEnabled)
+            disableAllKernelEffects();
+        ridgeDetectionKernelEnabled = !ridgeDetectionKernelEnabled;
+    }
 }
 
 void DrawImGui(ProgramState *programState) {
@@ -1001,7 +1037,7 @@ void DrawImGui(ProgramState *programState) {
         {
             ImGui::SetNextWindowPos(ImVec2(0, 0));
             ImGui::SetNextWindowSize(ImVec2(600, 130), ImGuiCond_Once);
-            ImGui::Begin("Camera settings", NULL, ImGuiWindowFlags_NoCollapse);
+            ImGui::Begin("Camera settings:", NULL, ImGuiWindowFlags_NoCollapse);
             const Camera &c = programState->camera;
             ImGui::Text("Camera Info:");
             ImGui::Indent();
@@ -1043,8 +1079,8 @@ void DrawImGui(ProgramState *programState) {
 
         {
             ImGui::SetNextWindowPos(ImVec2(0, 350));
-            ImGui::SetNextWindowSize(ImVec2(600, 200), ImGuiCond_Once);
-            ImGui::Begin("Post-Processing settings", NULL, ImGuiWindowFlags_NoCollapse);
+            ImGui::SetNextWindowSize(ImVec2(600, 270), ImGuiCond_Once);
+            ImGui::Begin("Post-Processing settings:", NULL, ImGuiWindowFlags_NoCollapse);
             ImGui::Bullet();
             ImGui::Checkbox("Anti-Aliasing (shortcut: F2)", &programState->AAEnabled);
             ImGui::Bullet();
@@ -1058,6 +1094,29 @@ void DrawImGui(ProgramState *programState) {
             ImGui::DragFloat("Exposure", &exposure, 0.05f, 0.25f, 4.0f);
             ImGui::SameLine();
             HelpMarker("Use Q and E to decrease/increase exposure level", true);
+            ImGui::Spacing();
+            ImGui::Text("Kernel effects:");
+            ImGui::SameLine();
+            ImGui::TextColored(ImVec4(0.3, 1.0, 0.3, 1.0), "~ Note: only one kernel effect can be active at a time!");
+            ImGui::Bullet();
+            ImGui::Text("(F4) - Sharpen");
+            ImGui::SameLine();
+            HelpMarker("Press F4 to toggle sharpen effect\nThe sharpen kernel emphasizes differences in adjacent pixel values");
+            ImGui::Bullet();
+            ImGui::Text("(F5) - Blur");
+            ImGui::SameLine();
+            HelpMarker("Press F5 to toggle blur effect\nThe blur kernel de-emphasizes differences in adjacent pixel values");
+            ImGui::Bullet();
+            ImGui::Text("(F6) - Edge Detection");
+            ImGui::SameLine();
+            HelpMarker("Press F6 to toggle edge-detection effect");
+            ImGui::Bullet();
+            ImGui::Text("(F7) - Ridge Detection");
+            ImGui::SameLine();
+            HelpMarker("Press F7 to toggle ridge-detection effect\n\n"
+                       "~ Ridge detection is the attempt, via software, to locate ridges in an image, defined as curves "
+                       "whose points are local maxima of the function, akin to geographical ridges. ~\n"
+                       "-- Wikipedia");
             ImGui::Spacing();
             ImGui::Spacing();
             ImGui::TextColored(ImVec4(1.0, 0.5, 0.5, 1.0), "Note: changes will not take effect until intro is complete");
@@ -1294,4 +1353,12 @@ bool uslovi()
         return programState->odobreno;
     else
         return false;
+}
+
+void disableAllKernelEffects()
+{
+    sharpenKernelEnabled = false;
+    blurKernelEnabled = false;
+    edgeDetectionKernelEnabled = false;
+    ridgeDetectionKernelEnabled = false;
 }
