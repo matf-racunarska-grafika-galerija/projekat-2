@@ -55,7 +55,6 @@ void updateFlickering();
 bool oneSecondPassed(float lastChange);
 
 struct ProgramState {
-    glm::vec3 clearColor = glm::vec3(0);
     bool ImGuiEnabled = false;
     bool exposureWindowEnabled = true;
     Camera camera;
@@ -76,16 +75,10 @@ struct ProgramState {
 
     void SaveToFile(std::string filename);
     void LoadFromFile(std::string filename);
-    glm::vec3 tempPosition=glm::vec3(0.0f, 2.0f, -7.0f);
-    float tempScale=1.0f;
-    float tempRotation=0.0f;
 };
 void ProgramState::SaveToFile(std::string filename) {
     std::ofstream out(filename);
-    out << clearColor.r << '\n'
-        << clearColor.g << '\n'
-        << clearColor.b << '\n'
-        << camera.Position.x << '\n'
+    out << camera.Position.x << '\n'
         << camera.Position.y << '\n'
         << camera.Position.z << '\n'
         << camera.Front.x << '\n'
@@ -93,15 +86,11 @@ void ProgramState::SaveToFile(std::string filename) {
         << camera.Front.z << '\n'
         << spotlight << '\n'
         << whiteAmbientLightStrength << '\n';
-        //<< introComplete;
 }
 void ProgramState::LoadFromFile(std::string filename) {
     std::ifstream in(filename);
     if (in) {
-        in >> clearColor.r
-           >> clearColor.g
-           >> clearColor.b
-           >> camera.Position.x
+        in >> camera.Position.x
            >> camera.Position.y
            >> camera.Position.z
            >> camera.Front.x
@@ -109,11 +98,11 @@ void ProgramState::LoadFromFile(std::string filename) {
            >> camera.Front.z
            >> spotlight
            >> whiteAmbientLightStrength;
-          // >> introComplete;
     }
 }
 ProgramState *programState;
 
+static void HelpMarker(const char* desc, bool extraText = false);
 void DrawImGui(ProgramState *programState);
 
 glm::mat4 CalcFlashlightPosition();
@@ -355,7 +344,7 @@ int main() {
         if(programState->introComplete == false)
         {
             // intro speed
-            programState->camera.Position.z -= 7.0f * deltaTime;
+            programState->camera.Position.z -= 10.0f * deltaTime;
         }
 
         if(programState->introComplete == false && programState->camera.Position.z < 0) {
@@ -804,7 +793,7 @@ int main() {
             }
 
             glBindFramebuffer(GL_FRAMEBUFFER, 0);
-            glClearColor(programState->clearColor.r, programState->clearColor.g, programState->clearColor.b, 1.0f);
+            glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
             glClear(GL_COLOR_BUFFER_BIT);
             glDisable(GL_DEPTH_TEST);
 
@@ -880,7 +869,10 @@ void processInput(GLFWwindow *window) {
     }
     else if (glfwGetKey(window, GLFW_KEY_E) == GLFW_PRESS)
     {
-        exposure += 0.005f;
+        if (exposure < 4.0f)
+            exposure += 0.005f;
+        else
+            exposure = 4.0f;
     }
 
     if (glfwGetKey(window, GLFW_KEY_B) == GLFW_PRESS && !bloomKeyPressed)
@@ -897,7 +889,7 @@ void processInput(GLFWwindow *window) {
     if(programState->enabledKeyboardInput) {
 
         if(!programState->creativeMode)         // zakljucava kretanje po y-osi ako nismo u creative modu
-            programState->camera.Position.y = 1.8f;
+            programState->camera.Position.y = 1.75f;
 
         if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
             programState->camera.ProcessKeyboard(FORWARD, deltaTime);
@@ -1003,7 +995,7 @@ void DrawImGui(ProgramState *programState) {
         {
             ImGui::SetNextWindowPos(ImVec2(0, 0));
             ImGui::SetNextWindowSize(ImVec2(600, 130), ImGuiCond_Once);
-            ImGui::Begin("Camera settings");
+            ImGui::Begin("Camera settings", NULL, ImGuiWindowFlags_NoCollapse);
             const Camera &c = programState->camera;
             ImGui::Text("Camera Info:");
             ImGui::Indent();
@@ -1016,18 +1008,22 @@ void DrawImGui(ProgramState *programState) {
             ImGui::Unindent();
             ImGui::Spacing();
             ImGui::Spacing();
-            ImGui::Text("Toggle camera movement on/off: C");
+            ImGui::Text("Toggle camera movement on/off");
+            ImGui::SameLine();
+            ImGui::TextColored(ImVec4(0.3, 0.3, 1.0, 1.0), "(toggle cursor)");
+            ImGui::SameLine();
+            ImGui::Text(": C");
             ImGui::End();
         }
 
         {
             ImGui::SetNextWindowPos(ImVec2(0, 170));
             ImGui::SetNextWindowSize(ImVec2(600, 135));
-            ImGui::Begin("General settings:");
+            ImGui::Begin("General settings:", NULL, ImGuiWindowFlags_NoCollapse);
             ImGui::Bullet();
             ImGui::Checkbox("Spectator mode (shortcut: N)", &programState->creativeMode);
             ImGui::SameLine();
-            ImGui::TextColored(ImVec4(0.5, 0.5, 1.0, 1.0), "~ Allows you to move freely across the scene");
+            HelpMarker("Allows you to move freely across the scene\nUse SPACE to move upwards and SHIFT to move downwards");
             ImGui::TextColored(ImVec4(1.0, 0.5, 0.5, 1.0), "Note: spectator mode changes will not take effect until intro is complete");
             ImGui::Bullet();
             ImGui::DragFloat("Movement Speed", (float *) &programState->camera.MovementSpeed, 0.5f, 2.5f, 100.0f);
@@ -1041,15 +1037,21 @@ void DrawImGui(ProgramState *programState) {
 
         {
             ImGui::SetNextWindowPos(ImVec2(0, 350));
-            ImGui::SetNextWindowSize(ImVec2(600, 175), ImGuiCond_Once);
-            ImGui::Begin("Post-Processing settings");
+            ImGui::SetNextWindowSize(ImVec2(600, 200), ImGuiCond_Once);
+            ImGui::Begin("Post-Processing settings", NULL, ImGuiWindowFlags_NoCollapse);
+            ImGui::Bullet();
             ImGui::Checkbox("Anti-Aliasing (shortcut: F2)", &programState->AAEnabled);
+            ImGui::Bullet();
             ImGui::Checkbox("Grayscale (shortcut: F3)", &programState->grayscaleEnabled);
+            ImGui::Bullet();
             ImGui::Checkbox("HDR (shortcut: H)", &hdr);
+            ImGui::Bullet();
             ImGui::Checkbox("Bloom (shortcut: B)", &bloom);
             ImGui::Spacing();
             ImGui::Bullet();
             ImGui::DragFloat("Exposure", &exposure, 0.05f, 0.25f, 4.0f);
+            ImGui::SameLine();
+            HelpMarker("Use Q and E to decrease/increase exposure level", true);
             ImGui::Spacing();
             ImGui::Spacing();
             ImGui::TextColored(ImVec4(1.0, 0.5, 0.5, 1.0), "Note: changes will not take effect until intro is complete");
@@ -1251,4 +1253,23 @@ glm::vec3 CalcZombiePosition()
         zombiePos = glm::vec3(100.0f, -3.0f, 100.0f);
 
     return zombiePos;
+}
+
+// Helper to display a little (?) mark which shows a tooltip when hovered.
+static void HelpMarker(const char* desc, bool extraText)
+{
+    ImGui::TextDisabled("(?)");
+    if (ImGui::IsItemHovered())
+    {
+        ImGui::BeginTooltip();
+        ImGui::PushTextWrapPos(ImGui::GetFontSize() * 35.0f);
+        ImGui::TextUnformatted(desc);
+        if(extraText){
+            ImGui::Spacing();
+            ImGui::Spacing();
+            ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.8f, 0.7f), "`What did that sign say again?`");
+        }
+        ImGui::PopTextWrapPos();
+        ImGui::EndTooltip();
+    }
 }
