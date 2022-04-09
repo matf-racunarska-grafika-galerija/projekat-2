@@ -67,9 +67,10 @@ struct ProgramState {
     bool introComplete = false;
     bool enabledKeyboardInput = false;
     bool enabledMouseInput = false;
-    bool showZombie = false;
+    bool showZombie = true;
     bool zombieRendered = false;
     bool creativeMode = false;
+    bool renderuj = false;
 
     ProgramState()
             : camera(glm::vec3((-0.8f, 1.0f, 150.0f))) {}
@@ -337,7 +338,7 @@ int main() {
     // render loop
     while (!glfwWindowShouldClose(window)) {
         // per-frame time logic
-        float currentFrame = (float)glfwGetTime();
+        float currentFrame = (float) glfwGetTime();
         deltaTime = currentFrame - lastFrame;
         lastFrame = currentFrame;
 
@@ -352,13 +353,12 @@ int main() {
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
 
-        if(programState->introComplete == false)
-        {
+        if (programState->introComplete == false) {
             // intro speed
             programState->camera.Position.z -= 7.0f * deltaTime;
         }
 
-        if(programState->introComplete == false && programState->camera.Position.z < 0) {
+        if (programState->introComplete == false && programState->camera.Position.z < 0) {
             programState->enabledKeyboardInput = true;
             programState->enabledMouseInput = true;
             programState->camera.Position.x = -1.5f;
@@ -367,13 +367,13 @@ int main() {
         }
 
         // ovo je intro render dok se "vozimo kolima"
-        if(!programState->introComplete) {
+        if (!programState->introComplete) {
             // 1. geometry pass: render scene's geometry/color data into gbuffer
             // -----------------------------------------------------------------
             glBindFramebuffer(GL_FRAMEBUFFER, gBuffer);
             glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
             projection = glm::perspective(glm::radians(programState->camera.Zoom),
-                                                    (float) SCR_WIDTH / (float) SCR_HEIGHT, 0.1f, 200.0f);
+                                          (float) SCR_WIDTH / (float) SCR_HEIGHT, 0.1f, 200.0f);
             view = programState->camera.GetViewMatrix();
             model = glm::mat4(1.0f);
             shaderGeometryPass.use();
@@ -388,9 +388,8 @@ int main() {
             }
             glDisable(GL_CULL_FACE);
 
-            for(int i = 0; i < NR_TREES; i++)
-            {
-                model = glm::mat4 (1.0f);
+            for (int i = 0; i < NR_TREES; i++) {
+                model = glm::mat4(1.0f);
                 model = glm::translate(model, treePos[i]);
                 model = glm::scale(model, glm::vec3(2.0f));
                 shaderGeometryPass.setMat4("model", model);
@@ -464,9 +463,11 @@ int main() {
                 shaderLightingPass.setFloat("lights[" + std::to_string(i) + "].quadratic", 0.032f);
 
                 shaderLightingPass.setFloat("lights[" + std::to_string(i) + "].cutOff",
-                                            glm::cos(glm::radians(15.0f + (sin((float)glfwGetTime()) / 2.0f + 0.5) * 3)));
+                                            glm::cos(glm::radians(
+                                                    15.0f + (sin((float) glfwGetTime()) / 2.0f + 0.5) * 3)));
                 shaderLightingPass.setFloat("lights[" + std::to_string(i) + "].outerCutOff",
-                                            glm::cos(glm::radians(25.0f + (cos((float)glfwGetTime()) / 2.0f + 0.5) * 5)));
+                                            glm::cos(glm::radians(
+                                                    25.0f + (cos((float) glfwGetTime()) / 2.0f + 0.5) * 5)));
             }
             shaderLightingPass.setVec3("viewPos", programState->camera.Position);
             // finally render quad
@@ -475,7 +476,8 @@ int main() {
             // copy content of geometry's depth buffer to default framebuffer's depth buffer
             glBindFramebuffer(GL_READ_FRAMEBUFFER, gBuffer);
             glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
-            glBlitFramebuffer(0, 0, SCR_WIDTH, SCR_HEIGHT, 0, 0, SCR_WIDTH, SCR_HEIGHT, GL_DEPTH_BUFFER_BIT, GL_NEAREST);
+            glBlitFramebuffer(0, 0, SCR_WIDTH, SCR_HEIGHT, 0, 0, SCR_WIDTH, SCR_HEIGHT, GL_DEPTH_BUFFER_BIT,
+                              GL_NEAREST);
             glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
             // 3. render lights on top of scene
@@ -493,7 +495,7 @@ int main() {
             }
         }
 
-        if(programState->introComplete) {
+        if (programState->introComplete) {
             // ANTI-ALIASING: preusmeravamo renderovanje na nas framebuffer da bismo imali MSAA
             // *************************************************************************************************************
             glBindFramebuffer(GL_FRAMEBUFFER, framebuffer);
@@ -509,11 +511,11 @@ int main() {
 
         // view/projection transformations
         projection = glm::perspective(glm::radians(programState->camera.Zoom),
-                                                (float) SCR_WIDTH / (float) SCR_HEIGHT, 0.1f, 1000.0f);
+                                      (float) SCR_WIDTH / (float) SCR_HEIGHT, 0.1f, 1000.0f);
         view = programState->camera.GetViewMatrix();
         objShader.setMat4("projection", projection);
         objShader.setMat4("view", view);
-        
+
         // directional light
         objShader.setVec3("dirLight.direction", -0.2f, -1.0f, -0.3f);
         objShader.setVec3("dirLight.ambient", glm::vec3(programState->whiteAmbientLightStrength));
@@ -529,14 +531,14 @@ int main() {
 //        objShader.setFloat("pointLight.quadratic", 0.032f);
 
         // spotlight - baterijska lampa
-        objShader.setVec3("lampa.position", programState->camera.Position + 0.35f * programState->camera.Front + 0.07f * programState->camera.Right - 0.08f * programState->camera.Up);
+        objShader.setVec3("lampa.position", programState->camera.Position + 0.35f * programState->camera.Front +
+                                            0.07f * programState->camera.Right - 0.08f * programState->camera.Up);
         objShader.setVec3("lampa.direction", programState->camera.Front);
         objShader.setVec3("lampa.ambient", 0.0f, 0.0f, 0.0f);
-        if(programState->spotlight) {
+        if (programState->spotlight) {
             objShader.setVec3("lampa.diffuse", 3.0f, 3.0f, 3.0f);
             objShader.setVec3("lampa.specular", glm::vec3(0.2f));
-        }
-        else {
+        } else {
             objShader.setVec3("lampa.diffuse", 0.0f, 0.0f, 0.0f);
             objShader.setVec3("lampa.specular", 0.0f, 0.0f, 0.0f);
         }
@@ -550,19 +552,19 @@ int main() {
         objShader.setVec3("flickeringLight.position", lightPositions[0]);
         objShader.setVec3("flickeringLight.direction", glm::vec3(0.0f, -1.0f, 0.0f));
         objShader.setVec3("flickeringLight.ambient", 0.0f, 0.0f, 0.0f);
-        objShader.setVec3("flickeringLight.diffuse",  flickerMode[mode] * glm::vec3(1.0f, 1.0f, 0.5f));
+        objShader.setVec3("flickeringLight.diffuse", flickerMode[mode] * glm::vec3(1.0f, 1.0f, 0.5f));
         objShader.setVec3("flickeringLight.specular", 1.0f, 1.0f, 1.0f);
         objShader.setFloat("flickeringLight.constant", 1.0f);
         objShader.setFloat("flickeringLight.linear", 0.09f);
         objShader.setFloat("flickeringLight.quadratic", 0.032f);
         objShader.setFloat("flickeringLight.cutOff", glm::cos(glm::radians(15.0f)));
         objShader.setFloat("flickeringLight.outerCutOff", glm::cos(glm::radians(30.0f)));
-        
+
         // spotlight - svetlo tv-a
         objShader.setVec3("tvLight.position", glm::vec3(2.0f, 0.635f, -39.8f));
         objShader.setVec3("tvLight.direction", glm::vec3(-1.0f, 0.0f, 1.0f));
         objShader.setVec3("tvLight.ambient", 0.02f, 0.02f, 0.02f);
-        objShader.setVec3("tvLight.diffuse",  glm::vec3(10.0f, 10.0f, 10.0f));
+        objShader.setVec3("tvLight.diffuse", glm::vec3(10.0f, 10.0f, 10.0f));
         objShader.setVec3("tvLight.specular", 1.0f, 1.0f, 1.0f);
         objShader.setFloat("tvLight.constant", 1.0f);
         objShader.setFloat("tvLight.linear", 0.9f);
@@ -571,7 +573,7 @@ int main() {
         objShader.setFloat("tvLight.outerCutOff", glm::cos(glm::radians(60.0f)));
 
 
-        if(programState->introComplete) {
+        if (programState->introComplete) {
             // renderovanje baterijske lampe:
             model = CalcFlashlightPosition();
             objShader.setMat4("model", model);
@@ -596,12 +598,12 @@ int main() {
 
         // renderovanje TV-a:
         model = glm::mat4(1.0f);
-        model = glm::translate(model,glm::vec3(2.0f, 0.625f, -40.0f));
+        model = glm::translate(model, glm::vec3(2.0f, 0.625f, -40.0f));
         model = glm::rotate(model, glm::radians(-135.0f), glm::vec3(0.0f, 1.0f, 0.0f));
         objShader.setMat4("model", model);
         tvModel.Draw(objShader);
         model = glm::mat4(1.0f);
-        model = glm::translate(model,glm::vec3(2.0f, 0.0f, -40.0f));
+        model = glm::translate(model, glm::vec3(2.0f, 0.0f, -40.0f));
         model = glm::rotate(model, glm::radians(-135.0f), glm::vec3(0.0f, 1.0f, 0.0f));
         model = glm::scale(model, glm::vec3(0.25f, 0.15f, 0.45f));
         objShader.setMat4("model", model);
@@ -646,12 +648,17 @@ int main() {
         trailerModel.Draw(objShader);
 
         // renderovanje zombija:
-        model = glm::mat4(1.0f);
-        model = glm::translate(model, CalcZombiePosition());
-        model = glm::rotate(model, glm::radians(130.0f), glm::vec3(0.0f, 1.0f, 0.0f));
-        model = glm::scale(model, glm::vec3(0.03f));
-        objShader.setMat4("model", model);
-        zombieModel.Draw(objShader);
+
+
+        if (programState->renderuj || exposure == 0.25f || !bloom) {
+            programState->renderuj  = true;
+            model = glm::mat4(1.0f);
+            model = glm::translate(model, CalcZombiePosition());
+            model = glm::rotate(model, glm::radians(130.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+            model = glm::scale(model, glm::vec3(0.04f));
+            objShader.setMat4("model", model);
+            zombieModel.Draw(objShader);
+    }
 
         glDisable(GL_CULL_FACE);
 
@@ -1244,11 +1251,9 @@ glm::vec3 CalcZombiePosition()
         return zombiePos;
     else if(programState->showZombie)
     {
-        zombiePos = programState->camera.Position + glm::vec3(-1.2f, 0.0f, 1.2f);
+        zombiePos = programState->camera.Position + glm::vec3(-1.2f, -1.8f, 1.2f);
         programState->zombieRendered = true;
     }
-    else
-        zombiePos = glm::vec3(100.0f, -3.0f, 100.0f);
 
     return zombiePos;
 }
