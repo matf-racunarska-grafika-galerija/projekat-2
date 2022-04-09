@@ -24,7 +24,8 @@ void mouse_button_callback(GLFWwindow* window, int button, int action, int mods)
 void scroll_callback(GLFWwindow *window, double xoffset, double yoffset);
 void key_callback(GLFWwindow *window, int key, int scancode, int action, int mods);
 void processInput(GLFWwindow *window);
-
+bool norm(glm::vec3 v1, glm::vec3 v2);
+bool uslovi();
 // settings
 const unsigned int SCR_WIDTH = 1200;
 const unsigned int SCR_HEIGHT = 900;
@@ -71,6 +72,7 @@ struct ProgramState {
     bool zombieRendered = false;
     bool creativeMode = false;
     bool renderuj = false;
+    bool odobreno = false;
 
     ProgramState()
             : camera(glm::vec3((-0.8f, 1.0f, 150.0f))) {}
@@ -650,7 +652,7 @@ int main() {
         // renderovanje zombija:
 
 
-        if (programState->renderuj || exposure == 0.25f || !bloom) {
+        if (uslovi()) { //bas nisam kreativan
             programState->renderuj  = true;
             model = glm::mat4(1.0f);
             model = glm::translate(model, CalcZombiePosition());
@@ -833,8 +835,6 @@ int main() {
             glBindTexture(GL_TEXTURE_2D_MULTISAMPLE, textureColorBufferMultiSampled);
             glDrawArrays(GL_TRIANGLES, 0, 6);
 
-            //std::cout << "hdr: " << (hdr ? "on" : "off") << "| exposure: " << exposure << std::endl;
-            // *************************************************************************************************************
         }
 
         if (programState->ImGuiEnabled || programState->exposureWindowEnabled)
@@ -881,13 +881,13 @@ void processInput(GLFWwindow *window) {
     if (glfwGetKey(window, GLFW_KEY_Q) == GLFW_PRESS)
     {
         if (exposure > 0.25f)
-             exposure -= 0.005f;
+             exposure -= 0.05f;
         else
             exposure = 0.25f;
     }
     else if (glfwGetKey(window, GLFW_KEY_E) == GLFW_PRESS)
     {
-        exposure += 0.005f;
+        exposure += 0.05f;
     }
 
     if (glfwGetKey(window, GLFW_KEY_B) == GLFW_PRESS && !bloomKeyPressed)
@@ -1256,4 +1256,18 @@ glm::vec3 CalcZombiePosition()
     }
 
     return zombiePos;
+}
+bool norm(glm::vec3 v1, glm::vec3 v2){
+    return sqrt(pow(v1.x - v2.x, 2) + pow(v1.y - v2.y, 2) + pow(v1.z - v2.z, 2)) < 6.0f;
+}
+bool uslovi() {
+    if ((programState->renderuj || exposure == 0.25f || !bloom) &&
+        norm(glm::vec3(2.0f, 0.625f, -40.0f), programState->camera.Position)) {
+        programState->odobreno = true;
+        return programState->odobreno;
+    }
+    else if((programState->renderuj || exposure == 0.25f || !bloom) && !norm(glm::vec3(2.0f, 0.625f, -40.0f), programState->camera.Position))
+        return programState->odobreno;
+    else
+        return false;
 }
